@@ -441,6 +441,14 @@ module.exports = ({
 
       const idempotencyKey = req.body.idempotency_key || null;
 
+      const sessaoCaixa = await pool.query(
+        `SELECT id FROM caixa_sessoes WHERE empresa_id = $1 AND fechado_em IS NULL LIMIT 1`,
+        [empresaResolvida.id]
+      );
+      if (sessaoCaixa.rowCount === 0) {
+        return erro(res, 400, 'Caixa não está aberto. Abra o caixa antes de registrar uma venda.');
+      }
+
       const limiteVendas = await validarLimiteVendasMes(empresaResolvida);
 
       if (!limiteVendas.permitido) {
