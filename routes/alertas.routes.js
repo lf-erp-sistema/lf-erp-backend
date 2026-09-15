@@ -5,10 +5,12 @@
  * Montado em /alertas.
  *
  * Rotas:
- *   GET  /alertas/config      — ler configuração de alertas
- *   PUT  /alertas/config      — salvar configuração (SMTP, templates)
- *   POST /alertas/disparar    — envia emails e retorna links WhatsApp
- *   GET  /alertas/historico   — histórico dos últimos 100 alertas
+ *   GET  /alertas/config                — ler configuração de alertas
+ *   PUT  /alertas/config                — salvar configuração (SMTP, templates)
+ *   POST /alertas/disparar              — envia emails e retorna links WhatsApp (inadimplentes)
+ *   GET  /alertas/historico             — histórico dos últimos 100 alertas
+ *   GET  /alertas/preview-promissoria   — gera mensagem WhatsApp para um cliente (manual)
+ *   POST /alertas/disparar-preventivo   — dispara cobrança preventiva (cron webhook ou manual)
  */
 
 const nodemailer = require('nodemailer');
@@ -16,6 +18,35 @@ const nodemailer = require('nodemailer');
 // Template simples: substitui {{variavel}} pelos valores
 function aplicarTemplate(template, vars) {
   return String(template || '').replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? '');
+}
+
+// Monta mensagem WhatsApp para cobrança preventiva de promissórias
+function montarMensagemPromissoria(cliente, empresaNome) {
+  const fmtCur = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fmtData = d => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+
+  const hojeFortaleza = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Fortaleza' }));
+  const hojeStr = hojeFortaleza.toISOString().slice(0, 10);
+
+  const venceHoje = cliente.itens.some(i => String(i.data_vencimento || '').slice(0, 10) === hojeStr);
+
+  const itensLinhas = cliente.itens.map(item => {
+    const temParcial = Number(item.valor_original || 0) > Number(item.valor || 0) + 0.01;
+    const nome = item.descricao || 'Produto';
+    if (temParcial) return `• ${nome} → restam *${fmtCur(item.valor)}* (de ${fmtCur(item.valor_original)})`;
+    return `• ${nome} → *${fmtCur(item.valor)}*`;
+  }).join('\n');
+
+  const temParcialTotal = Number(cliente.total_original || 0) > Number(cliente.total || 0) + 0.01;
+  const totalLinha = temParcialTotal
+    ? `💰 *Total em aberto: ${fmtCur(cliente.total)}* (de ${fmtCur(cliente.total_original)})`
+    : `💰 *Total: ${fmtCur(cliente.total)}*`;
+
+  const aviso = venceHoje
+    ? `Sua promissória vence *hoje, ${fmtData(hojeStr)}*. Segue o detalhamento:`
+    : `Segue o resumo das suas promissórias em aberto:`;
+
+  return `Olá, *${cliente.cliente_nome}*! 👋\n\n${aviso}\n\n📦 *Produtos:*\n${itensLinhas}\n\n${totalLinha}\n\nQualquer dúvida, fale com a gente! 😊\n— *${empresaNome}*`;
 }
 
 function escHtml(s) {
@@ -89,7 +120,8 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
         email_ativo, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
         email_assunto, email_corpo,
         whatsapp_ativo, whatsapp_msg,
-        dias_atraso_minimo
+        dias_atraso_minimo,
+        cobranca_preventiva_ativa
       } = req.body;
 
       if (dias_atraso_minimo != null) {
@@ -102,8 +134,9 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
       await pool.query(
         `INSERT INTO alertas_config
            (empresa_id, email_ativo, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
-            email_assunto, email_corpo, whatsapp_ativo, whatsapp_msg, dias_atraso_minimo, atualizado_em)
-         VALUES ($1,COALESCE($2,false),$3,$4,$5,$6,$7,$8,$9,COALESCE($10,false),$11,$12,NOW() AT TIME ZONE 'America/Fortaleza')
+            email_assunto, email_corpo, whatsapp_ativo, whatsapp_msg, dias_atraso_minimo,
+            cobranca_preventiva_ativa, atualizado_em)
+         VALUES ($1,COALESCE($2,false),$3,$4,$5,$6,$7,$8,$9,COALESCE($10,false),$11,$12,COALESCE($13,false),NOW() AT TIME ZONE 'America/Fortaleza')
          ON CONFLICT (empresa_id) DO UPDATE SET
            email_ativo           = COALESCE($2, alertas_config.email_ativo),
            smtp_host             = COALESCE($3, alertas_config.smtp_host),
@@ -114,22 +147,24 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
            email_assunto         = COALESCE($8, alertas_config.email_assunto),
            email_corpo           = COALESCE($9, alertas_config.email_corpo),
            whatsapp_ativo        = COALESCE($10, alertas_config.whatsapp_ativo),
-           whatsapp_msg          = COALESCE($11, alertas_config.whatsapp_msg),
-           dias_atraso_minimo    = COALESCE($12, alertas_config.dias_atraso_minimo),
-           atualizado_em         = NOW() AT TIME ZONE 'America/Fortaleza'`,
+           whatsapp_msg               = COALESCE($11, alertas_config.whatsapp_msg),
+           dias_atraso_minimo         = COALESCE($12, alertas_config.dias_atraso_minimo),
+           cobranca_preventiva_ativa  = COALESCE($13, alertas_config.cobranca_preventiva_ativa),
+           atualizado_em              = NOW() AT TIME ZONE 'America/Fortaleza'`,
         [
           emp.id,
           email_ativo !== undefined ? Boolean(email_ativo) : null,
           smtp_host || null,
           smtp_port ? Number(smtp_port) : null,
           smtp_user || null,
-          smtp_pass ? encryptField(smtp_pass) : null,   // criptografado; só atualiza se informado
+          smtp_pass ? encryptField(smtp_pass) : null,
           smtp_from || null,
           email_assunto || null,
           email_corpo || null,
           whatsapp_ativo !== undefined ? Boolean(whatsapp_ativo) : null,
           whatsapp_msg || null,
-          dias_atraso_minimo != null ? Number(dias_atraso_minimo) : null
+          dias_atraso_minimo != null ? Number(dias_atraso_minimo) : null,
+          cobranca_preventiva_ativa !== undefined ? Boolean(cobranca_preventiva_ativa) : null
         ]
       );
 
@@ -272,6 +307,184 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
     } catch (err) {
       console.error('[alertas] POST disparar:', err.message);
       return erro(res, 500, 'Erro ao disparar alertas');
+    }
+  });
+
+  // ── GET /alertas/preview-promissoria — mensagem manual para um cliente ───────
+  router.get('/preview-promissoria', auth, requirePermissao(pool, 'financeiro', 'ver'), async (req, res) => {
+    try {
+      const emp = await getEmpresa(req);
+      if (!emp) return erro(res, 403, 'Sem acesso');
+
+      const clienteId   = req.query.cliente_id   ? Number(req.query.cliente_id)   : null;
+      const clienteNome = req.query.cliente_nome  ? String(req.query.cliente_nome) : null;
+
+      if (!clienteId && !clienteNome) return erro(res, 400, 'Informe cliente_id ou cliente_nome');
+
+      const whereCliente = clienteId
+        ? `AND cr.cliente_id = ${clienteId}`
+        : `AND LOWER(cr.cliente_nome) = LOWER('${clienteNome.replace(/'/g, "''")}')`;
+
+      const result = await pool.query(
+        `SELECT cr.id, cr.cliente_id, cr.cliente_nome, cr.observacao,
+                cr.valor, cr.valor_original, cr.data_vencimento, cr.status,
+                c.telefone
+         FROM contas_receber cr
+         LEFT JOIN clientes c ON c.id = cr.cliente_id
+           AND (c.empresa_id = cr.empresa_id OR (c.empresa_id IS NULL AND c.empresa = cr.empresa))
+         WHERE (cr.empresa_id = $1 OR (cr.empresa_id IS NULL AND cr.empresa = $2))
+           AND cr.forma_pagamento ILIKE 'promiss%'
+           AND LOWER(COALESCE(cr.status,'pendente')) NOT IN ('pago','cancelado','estornado')
+           ${whereCliente}
+         ORDER BY cr.data_vencimento`,
+        [emp.id, emp.nome]
+      );
+
+      if (result.rowCount === 0) return erro(res, 404, 'Nenhuma promissória em aberto para este cliente');
+
+      const first = result.rows[0];
+      const cliente = {
+        cliente_id:    first.cliente_id,
+        cliente_nome:  first.cliente_nome || 'Cliente',
+        telefone:      first.telefone,
+        itens:         result.rows.map(r => ({
+          id:              r.id,
+          descricao:       r.observacao || 'Produto',
+          valor:           Number(r.valor || 0),
+          valor_original:  Number(r.valor_original || r.valor || 0),
+          data_vencimento: r.data_vencimento,
+          status:          r.status || 'pendente'
+        })),
+        total:          result.rows.reduce((s, r) => s + Number(r.valor || 0), 0),
+        total_original: result.rows.reduce((s, r) => s + Number(r.valor_original || r.valor || 0), 0)
+      };
+
+      const mensagem = montarMensagemPromissoria(cliente, emp.nome);
+      const link     = gerarLinkWhatsApp(cliente.telefone, mensagem);
+
+      return ok(res, { mensagem, link, telefone: cliente.telefone });
+    } catch (err) {
+      console.error('[alertas] GET preview-promissoria:', err.message);
+      return erro(res, 500, 'Erro ao gerar preview');
+    }
+  });
+
+  // ── POST /alertas/disparar-preventivo — cron webhook ou disparo manual ────────
+  router.post('/disparar-preventivo', async (req, res) => {
+    try {
+      // Aceita CRON_SECRET (webhook externo) ou JWT (usuário autenticado)
+      const cronSecret = process.env.CRON_SECRET;
+      const tokenHeader = req.headers['x-cron-secret'] || req.headers['authorization']?.replace('Bearer ', '');
+      const isCron = cronSecret && tokenHeader === cronSecret;
+
+      let emp = null;
+      if (isCron) {
+        // Webhook: empresa_id obrigatório no body
+        const { empresa_id } = req.body;
+        if (!empresa_id) return erro(res, 400, 'empresa_id obrigatório para disparo via cron');
+        const r = await pool.query(`SELECT * FROM empresas WHERE id = $1 LIMIT 1`, [empresa_id]);
+        if (!r.rowCount) return erro(res, 404, 'Empresa não encontrada');
+        emp = r.rows[0];
+      } else {
+        // Usuário autenticado via JWT
+        await new Promise((resolve, reject) => {
+          require('../middleware/auth').auth(req, res, (err) => err ? reject(err) : resolve());
+        });
+        emp = await getEmpresa(req);
+        if (!emp) return erro(res, 403, 'Sem acesso');
+      }
+
+      // Verifica se cobrança preventiva está ativa (ignora para disparo manual isCron=false)
+      if (isCron) {
+        const cfg = await pool.query(`SELECT cobranca_preventiva_ativa FROM alertas_config WHERE empresa_id = $1`, [emp.id]);
+        if (!cfg.rowCount || !cfg.rows[0].cobranca_preventiva_ativa) {
+          return ok(res, { mensagem: 'Cobrança preventiva desativada para esta empresa', disparados: 0 });
+        }
+      }
+
+      const hojeFortaleza = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Fortaleza' }));
+      const hoje = hojeFortaleza.toISOString().slice(0, 10);
+
+      // Busca apenas vencimentos de hoje (preventivo) ou todos em aberto (manual)
+      const somenteHoje = req.body.somente_hoje !== false; // default true
+      const whereData = somenteHoje ? `AND cr.data_vencimento::date = $3` : '';
+      const params = somenteHoje ? [emp.id, emp.nome, hoje] : [emp.id, emp.nome];
+
+      const result = await pool.query(
+        `SELECT cr.id, cr.cliente_id, cr.cliente_nome, cr.observacao,
+                cr.valor, cr.valor_original, cr.data_vencimento, cr.status,
+                c.telefone
+         FROM contas_receber cr
+         LEFT JOIN clientes c ON c.id = cr.cliente_id
+           AND (c.empresa_id = cr.empresa_id OR (c.empresa_id IS NULL AND c.empresa = cr.empresa))
+         WHERE (cr.empresa_id = $1 OR (cr.empresa_id IS NULL AND cr.empresa = $2))
+           AND cr.forma_pagamento ILIKE 'promiss%'
+           AND LOWER(COALESCE(cr.status,'pendente')) NOT IN ('pago','cancelado','estornado')
+           ${whereData}
+         ORDER BY cr.cliente_nome, cr.data_vencimento`,
+        params
+      );
+
+      if (result.rowCount === 0) {
+        return ok(res, { mensagem: 'Nenhuma promissória para disparar hoje', disparados: 0 });
+      }
+
+      // Agrupa por cliente
+      const clienteMap = new Map();
+      for (const row of result.rows) {
+        const key = row.cliente_id ?? `nome_${row.cliente_nome}`;
+        if (!clienteMap.has(key)) {
+          clienteMap.set(key, {
+            cliente_id: row.cliente_id, cliente_nome: row.cliente_nome || 'Cliente',
+            telefone: row.telefone, itens: [], total: 0, total_original: 0
+          });
+        }
+        const cli = clienteMap.get(key);
+        const v = Number(row.valor || 0), vo = Number(row.valor_original || row.valor || 0);
+        cli.itens.push({ id: row.id, descricao: row.observacao || 'Produto', valor: v, valor_original: vo, data_vencimento: row.data_vencimento, status: row.status });
+        cli.total += v; cli.total_original += vo;
+      }
+
+      const wppCfg = await pool.query(
+        `SELECT wpp_provider, wpp_api_url, wpp_instance, wpp_token, wpp_ativo FROM alertas_config WHERE empresa_id = $1`,
+        [emp.id]
+      );
+      const wpp = wppCfg.rows[0] || {};
+
+      const links = [];
+      let enviados = 0, erros = 0;
+
+      for (const cli of clienteMap.values()) {
+        const mensagem = montarMensagemPromissoria(cli, emp.nome);
+        const link     = gerarLinkWhatsApp(cli.telefone, mensagem);
+
+        let statusLog = 'link';
+        if (wpp.wpp_ativo && wpp.wpp_provider !== 'link' && cli.telefone) {
+          const { enviarMensagem } = require('../utils/whatsapp');
+          const r = await enviarMensagem({ cfg: wpp, telefone: cli.telefone, mensagem });
+          if (r.sucesso) { enviados++; statusLog = 'enviado'; }
+          else           { erros++;    statusLog = 'erro';    }
+        } else if (link) {
+          links.push({ cliente_nome: cli.cliente_nome, telefone: cli.telefone, link, mensagem });
+        }
+
+        await pool.query(
+          `INSERT INTO alertas_historico (empresa_id, tipo, cliente_id, cliente_nome, contato, valor_total, status)
+           VALUES ($1,'whatsapp',$2,$3,$4,$5,$6)`,
+          [emp.id, cli.cliente_id, cli.cliente_nome, cli.telefone, Math.round(cli.total * 100) / 100, statusLog]
+        ).catch(() => {});
+      }
+
+      return ok(res, {
+        mensagem: `Cobrança preventiva processada: ${enviados} enviados, ${links.length} links, ${erros} erros.`,
+        disparados: clienteMap.size,
+        enviados,
+        links_whatsapp: links,
+        erros
+      });
+    } catch (err) {
+      console.error('[alertas] POST disparar-preventivo:', err.message);
+      return erro(res, 500, 'Erro ao disparar cobrança preventiva');
     }
   });
 

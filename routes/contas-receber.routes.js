@@ -41,6 +41,78 @@ router.get('/contas-receber-clientes/:empresa', auth, requirePermissao(pool, 'fi
   }
 });
 
+// ── GET /contas-receber/promissorias — visão agrupada por cliente ─────────────
+router.get('/contas-receber/promissorias', auth, requirePermissao(pool, 'financeiro', 'ver'), async (req, res) => {
+  try {
+    const empresaResolvida = await validarAcessoEmpresa(req, null, req.empresa_id);
+    if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
+
+    const result = await pool.query(
+      `SELECT
+         cr.id,
+         cr.cliente_id,
+         cr.cliente_nome,
+         cr.observacao,
+         cr.valor,
+         cr.valor_original,
+         cr.data_vencimento,
+         cr.status,
+         cr.parcela,
+         cr.total_parcelas,
+         c.telefone
+       FROM contas_receber cr
+       LEFT JOIN clientes c ON c.id = cr.cliente_id
+         AND (c.empresa_id = cr.empresa_id OR (c.empresa_id IS NULL AND c.empresa = cr.empresa))
+       WHERE (cr.empresa_id = $1 OR (cr.empresa_id IS NULL AND cr.empresa = $2))
+         AND cr.forma_pagamento ILIKE 'promiss%'
+         AND LOWER(COALESCE(cr.status, 'pendente')) NOT IN ('pago', 'cancelado', 'estornado')
+       ORDER BY cr.cliente_nome, cr.data_vencimento`,
+      [empresaResolvida.id, empresaResolvida.nome]
+    );
+
+    const clienteMap = new Map();
+    for (const row of result.rows) {
+      const key = row.cliente_id ?? `nome_${row.cliente_nome}`;
+      if (!clienteMap.has(key)) {
+        clienteMap.set(key, {
+          cliente_id:    row.cliente_id,
+          cliente_nome:  row.cliente_nome || 'Cliente',
+          telefone:      row.telefone || null,
+          itens:         [],
+          total:         0,
+          total_original: 0
+        });
+      }
+      const cli    = clienteMap.get(key);
+      const valor  = Number(row.valor || 0);
+      const orig   = Number(row.valor_original || valor);
+      cli.itens.push({
+        id:              row.id,
+        descricao:       row.observacao || 'Produto',
+        valor,
+        valor_original:  orig,
+        data_vencimento: row.data_vencimento,
+        status:          row.status || 'pendente',
+        parcela:         row.parcela,
+        total_parcelas:  row.total_parcelas
+      });
+      cli.total          += valor;
+      cli.total_original += orig;
+    }
+
+    const clientes = Array.from(clienteMap.values()).map(c => ({
+      ...c,
+      total:          Math.round(c.total * 100) / 100,
+      total_original: Math.round(c.total_original * 100) / 100
+    }));
+
+    return res.json({ clientes, empresa: empresaResolvida.nome });
+  } catch (err) {
+    console.error('[promissorias] GET:', err.message);
+    return jsonErro(res, 500, 'Erro ao buscar promissórias');
+  }
+});
+
 router.get('/contas-receber/:empresa', auth, requirePermissao(pool, 'financeiro', 'ver'), async (req, res) => {
   try {
     const empresa = req.params.empresa;
