@@ -49,6 +49,37 @@ function montarMensagemPromissoria(cliente, empresaNome) {
   return `Olá, *${cliente.cliente_nome}*! 👋\n\n${aviso}\n\n📦 *Produtos:*\n${itensLinhas}\n\n${totalLinha}\n\nQualquer dúvida, fale com a gente! 😊\n— *${empresaNome}*`;
 }
 
+// ── Dias úteis ───────────────────────────────────────────────────────────────
+function isFeriadoNacional(date) {
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  // Feriados nacionais fixos brasileiros
+  const fixos = new Set(['1-1','4-21','5-1','9-7','10-12','11-2','11-15','12-25']);
+  return fixos.has(`${m}-${d}`);
+}
+
+function isDiaUtil(date) {
+  const dow = date.getDay(); // 0=Dom, 6=Sáb
+  if (dow === 0 || dow === 6) return false;
+  return !isFeriadoNacional(date);
+}
+
+// Retorna array de datas YYYY-MM-DD que devem ser cobertas hoje (dia útil cobre os
+// próximos dias não-úteis até o próximo dia útil). Retorna null se hoje não é dia útil.
+function datasParaProcessarHoje(hojeDate) {
+  if (!isDiaUtil(hojeDate)) return null;
+  const datas = [];
+  let d = new Date(hojeDate);
+  while (true) {
+    datas.push(d.toISOString().slice(0, 10));
+    const prox = new Date(d);
+    prox.setDate(prox.getDate() + 1);
+    if (isDiaUtil(prox)) break;
+    d = prox;
+  }
+  return datas;
+}
+
 function escHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -407,8 +438,24 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
 
       // Busca apenas vencimentos de hoje (preventivo) ou todos em aberto (manual)
       const somenteHoje = req.body.somente_hoje !== false; // default true
-      const whereData = somenteHoje ? `AND cr.data_vencimento::date = $3` : '';
-      const params = somenteHoje ? [emp.id, emp.nome, hoje] : [emp.id, emp.nome];
+      let whereData = '';
+      let params = [emp.id, emp.nome];
+
+      if (somenteHoje) {
+        if (isCron) {
+          // Cron: respeita dias úteis — sexta cobre sábado+domingo, etc.
+          const datasHoje = datasParaProcessarHoje(hojeFortaleza);
+          if (!datasHoje) {
+            return ok(res, { mensagem: 'Hoje não é dia útil — nenhuma mensagem enviada', disparados: 0 });
+          }
+          whereData = `AND cr.data_vencimento::date = ANY($3::date[])`;
+          params = [emp.id, emp.nome, datasHoje];
+        } else {
+          // Disparo manual (frontend): ignora regra de dia útil, usa data atual
+          whereData = `AND cr.data_vencimento::date = $3`;
+          params = [emp.id, emp.nome, hoje];
+        }
+      }
 
       const result = await pool.query(
         `SELECT cr.id, cr.cliente_id, cr.cliente_nome, cr.observacao,
