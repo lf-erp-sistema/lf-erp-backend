@@ -18,8 +18,9 @@
 const bcrypt = require('bcrypt');
 const jwt    = require('jsonwebtoken');
 
-const SECRET      = process.env.JWT_SECRET;
-const SALT_ROUNDS = 10;
+const SECRET        = process.env.JWT_SECRET;
+const PORTAL_SECRET = (SECRET || '') + '_portal_v1';
+const SALT_ROUNDS   = 10;
 
 if (!process.env.JWT_SECRET) {
   console.error('[portal] FATAL: JWT_SECRET não configurado. Tokens gerados sem segredo.');
@@ -69,18 +70,29 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
   }
 
   // ── Middleware exclusivo para tokens de cliente ───────────────────────────
-  function authCliente(req, res, next) {
+  async function authCliente(req, res, next) {
     const header = req.headers.authorization || '';
     const token  = header.startsWith('Bearer ') ? header.slice(7) : header;
     if (!token) return erro(res, 403, 'Sem acesso');
 
     try {
-      const decoded = jwt.verify(token, SECRET);
+      const decoded = jwt.verify(token, PORTAL_SECRET);
       if (decoded.tipo !== 'cliente') return erro(res, 403, 'Acesso não autorizado');
+
+      // Verificar portal_ativo a cada request para respeitar revogação imediata
+      const check = await pool.query(`SELECT portal_ativo FROM clientes WHERE id = $1`, [decoded.id]);
+      if (!check.rowCount || !check.rows[0].portal_ativo) {
+        return erro(res, 403, 'Acesso ao portal desativado');
+      }
+
       req.cliente = decoded;
       next();
-    } catch {
-      return erro(res, 403, 'Token inválido ou expirado');
+    } catch (e) {
+      if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') {
+        return erro(res, 403, 'Token inválido ou expirado');
+      }
+      console.error('[portal] authCliente:', e.message);
+      return erro(res, 500, 'Erro ao validar acesso');
     }
   }
 
@@ -89,21 +101,35 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
   // ─────────────────────────────────────────────────────────────────────────
   router.post('/login', portalLoginRateLimiter, async (req, res) => {
     try {
-      const { cpf_cnpj, senha } = req.body;
+      const { cpf_cnpj, senha, empresa_id: empresaIdLogin } = req.body;
       if (!cpf_cnpj || !senha) return erro(res, 400, 'Informe CPF/CNPJ e senha');
 
       const cleanDoc = String(cpf_cnpj).replace(/\D/g, '');
       if (cleanDoc.length < 11) return erro(res, 400, 'CPF/CNPJ inválido');
 
-      const result = await pool.query(
-        `SELECT c.*, e.nome AS empresa_nome
-         FROM clientes c
-         JOIN empresas e ON e.id = c.empresa_id
-         WHERE c.portal_ativo = true
-           AND c.senha_portal IS NOT NULL
-           AND REGEXP_REPLACE(COALESCE(c.cpf_cnpj, ''), '[^0-9]', '', 'g') = $1`,
-        [cleanDoc]
-      );
+      let result;
+      if (empresaIdLogin) {
+        result = await pool.query(
+          `SELECT c.*, e.nome AS empresa_nome
+           FROM clientes c
+           JOIN empresas e ON e.id = c.empresa_id
+           WHERE c.portal_ativo = true
+             AND c.senha_portal IS NOT NULL
+             AND REGEXP_REPLACE(COALESCE(c.cpf_cnpj, ''), '[^0-9]', '', 'g') = $1
+             AND c.empresa_id = $2`,
+          [cleanDoc, Number(empresaIdLogin)]
+        );
+      } else {
+        result = await pool.query(
+          `SELECT c.*, e.nome AS empresa_nome
+           FROM clientes c
+           JOIN empresas e ON e.id = c.empresa_id
+           WHERE c.portal_ativo = true
+             AND c.senha_portal IS NOT NULL
+             AND REGEXP_REPLACE(COALESCE(c.cpf_cnpj, ''), '[^0-9]', '', 'g') = $1`,
+          [cleanDoc]
+        );
+      }
 
       if (result.rowCount === 0) {
         // Dummy compare para equalizar tempo de resposta e evitar timing oracle
@@ -112,7 +138,7 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
       }
 
       if (result.rowCount > 1) {
-        return erro(res, 400, 'Dados inválidos ou acesso não autorizado');
+        return erro(res, 409, 'CPF/CNPJ registrado em mais de uma empresa. Informe o campo empresa_id.');
       }
 
       const cliente = result.rows[0];
@@ -132,8 +158,8 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
           empresa_id:   cliente.empresa_id,
           empresa_nome: cliente.empresa_nome
         },
-        SECRET,
-        { expiresIn: '24h' }
+        PORTAL_SECRET,
+        { expiresIn: '12h' }
       );
 
       return ok(res, {

@@ -64,12 +64,23 @@ router.put('/configuracoes', auth, writeRateLimiter, requirePermissao(pool, 'con
     }
 
     const taxaMultaFinal =
-      taxa_multa !== undefined ? Number(taxa_multa) : null;
+      taxa_multa !== undefined ? (taxa_multa != null ? Number(taxa_multa) : null) : null;
     const taxaJurosDiaFinal =
-      taxa_juros_dia !== undefined ? Number(taxa_juros_dia) : null;
+      taxa_juros_dia !== undefined ? (taxa_juros_dia != null ? Number(taxa_juros_dia) : null) : null;
 
-    if (logo_url && !logo_url.startsWith('http://') && !logo_url.startsWith('https://')) {
-      return jsonErro(res, 400, 'logo_url deve começar com http:// ou https://');
+    if (logo_url) {
+      if (!logo_url.startsWith('http://') && !logo_url.startsWith('https://')) {
+        return jsonErro(res, 400, 'logo_url deve começar com http:// ou https://');
+      }
+      try {
+        const _pu = new URL(logo_url);
+        const _h  = _pu.hostname.toLowerCase();
+        if (/^(localhost$|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.0\.0\.0$|::1$)/.test(_h)) {
+          return jsonErro(res, 400, 'logo_url não pode apontar para endereços internos');
+        }
+      } catch {
+        return jsonErro(res, 400, 'logo_url inválida');
+      }
     }
 
     const logoFinal = logo_url !== undefined ? (logo_url || null) : undefined;

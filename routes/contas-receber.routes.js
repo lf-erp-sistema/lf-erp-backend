@@ -30,6 +30,7 @@ router.get('/contas-receber-clientes/:empresa', auth, requirePermissao(pool, 'fi
         WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2))
           AND deletado_em IS NULL
         ORDER BY nome ASC
+        LIMIT 500
         `,
       [empresaResolvida.id, empresaResolvida.nome]
     );
@@ -66,7 +67,8 @@ router.get('/contas-receber/promissorias', auth, requirePermissao(pool, 'finance
        WHERE (cr.empresa_id = $1 OR (cr.empresa_id IS NULL AND cr.empresa = $2))
          AND cr.forma_pagamento ILIKE 'promiss%'
          AND LOWER(COALESCE(cr.status, 'pendente')) NOT IN ('pago', 'cancelado', 'estornado')
-       ORDER BY cr.cliente_nome, cr.data_vencimento`,
+       ORDER BY cr.cliente_nome, cr.data_vencimento
+       LIMIT 2000`,
       [empresaResolvida.id, empresaResolvida.nome]
     );
 
@@ -253,14 +255,21 @@ THEN 'atrasado'
     AND LOWER(COALESCE(lf.status, 'pendente')) = 'pago'
     AND LOWER(COALESCE(lf.categoria, '')) = 'contas_receber'
     AND lf.pagamento_data IS NOT NULL
-    AND EXISTS (
-      SELECT 1
-      FROM contas_receber cr
-      WHERE (
-        (lf.conta_receber_id IS NOT NULL AND cr.id = lf.conta_receber_id)
-        OR (lf.conta_receber_id IS NULL AND cr.id = CASE WHEN REGEXP_REPLACE(lf.descricao, '\\D', '', 'g') ~ '^[1-9][0-9]*$' THEN REGEXP_REPLACE(lf.descricao, '\\D', '', 'g')::INTEGER ELSE NULL END)
-      )
-        AND (cr.empresa_id = lf.empresa_id OR (cr.empresa_id IS NULL AND cr.empresa = lf.empresa))
+    AND (
+      (lf.conta_receber_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM contas_receber cr
+        WHERE cr.id = lf.conta_receber_id
+          AND (cr.empresa_id = lf.empresa_id OR (cr.empresa_id IS NULL AND cr.empresa = lf.empresa))
+      ))
+      OR (lf.conta_receber_id IS NULL AND EXISTS (
+        SELECT 1 FROM contas_receber cr
+        WHERE cr.id = (
+          CASE WHEN REGEXP_REPLACE(lf.descricao, '\\D', '', 'g') ~ '^[1-9][0-9]*$'
+               THEN REGEXP_REPLACE(lf.descricao, '\\D', '', 'g')::INTEGER
+               ELSE NULL END
+        )
+          AND (cr.empresa_id = lf.empresa_id OR (cr.empresa_id IS NULL AND cr.empresa = lf.empresa))
+      ))
     )
   `,
         [empresaResolvida.nome, empresaResolvida.id]

@@ -86,6 +86,7 @@ router.post('/conciliacao/importar', auth, writeRateLimiter, requirePermissao(po
     if (!podeGerenciarFinanceiro(req)) return jsonErro(res, 403, 'Acesso restrito a administradores e gerentes');
     const { conteudo, tipo, nome, conta } = req.body;
     if (!conteudo || !tipo || !nome) return jsonErro(res, 400, 'Campos obrigatórios: conteudo, tipo, nome');
+    if (typeof conteudo === 'string' && conteudo.length > 5 * 1024 * 1024) return jsonErro(res, 400, 'Arquivo muito grande (máximo 5 MB)');
 
     const empresaResolvida = await validarAcessoEmpresa(req, req.body.empresa);
     if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
@@ -315,11 +316,21 @@ router.delete('/conciliacao/:id', auth, writeRateLimiter, requirePermissao(pool,
     const empresaResolvida = await validarAcessoEmpresa(req, sess.rows[0].empresa);
     if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
 
-    await pool.query(`DELETE FROM conciliacao_itens WHERE conciliacao_id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`, [id, empresaResolvida.id, empresaResolvida.nome]);
-    await pool.query(
-      `DELETE FROM conciliacoes WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
-      [id, empresaResolvida.id, empresaResolvida.nome]
-    );
+    const delClient = await pool.connect();
+    try {
+      await delClient.query('BEGIN');
+      await delClient.query(`DELETE FROM conciliacao_itens WHERE conciliacao_id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`, [id, empresaResolvida.id, empresaResolvida.nome]);
+      await delClient.query(
+        `DELETE FROM conciliacoes WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
+        [id, empresaResolvida.id, empresaResolvida.nome]
+      );
+      await delClient.query('COMMIT');
+    } catch (delErr) {
+      await delClient.query('ROLLBACK');
+      throw delErr;
+    } finally {
+      delClient.release();
+    }
     res.json({ sucesso: true });
   } catch (error) {
     console.error('Erro ao excluir conciliação:', error);

@@ -377,7 +377,14 @@ router.post('/contas-pagar/pagar/:id', auth, writeRateLimiter, requirePermissao(
     }
 
     const conta = contaResult.rows[0];
-    const empresaResolvida = await validarAcessoEmpresa(req, conta.empresa, conta.empresa_id);
+    // Para não-saas_owner a conta já foi filtrada por empresa_id no FOR UPDATE —
+    // evitar query DB dentro da transação com lock para reduzir risco de deadlock.
+    let empresaResolvida;
+    if (req.user?.is_saas_owner) {
+      empresaResolvida = await validarAcessoEmpresa(req, conta.empresa, conta.empresa_id);
+    } else {
+      empresaResolvida = { id: req.user.empresa_id || conta.empresa_id || 0, nome: req.user.empresa || conta.empresa || '' };
+    }
 
     if (!empresaResolvida) {
       await client.query('ROLLBACK');

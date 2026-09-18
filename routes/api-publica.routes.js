@@ -89,7 +89,7 @@ module.exports = function ({ pool, writeRateLimiter, normalizarDecimal, normaliz
 
       const params = [eId];
       let where = `WHERE empresa_id = $1 AND deletado_em IS NULL`;
-      if (busca)     { params.push(`%${busca}%`); where += ` AND (nome ILIKE $${params.length} OR codigo ILIKE $${params.length})`; }
+      if (busca)     { const bEsc = busca.replace(/[%_\\]/g, '\\$&'); params.push(`%${bEsc}%`); where += ` AND (nome ILIKE $${params.length} ESCAPE '\\' OR codigo ILIKE $${params.length} ESCAPE '\\')`; }
       if (categoria) { params.push(categoria);    where += ` AND categoria = $${params.length}`; }
 
       const [data, count] = await Promise.all([
@@ -199,6 +199,10 @@ module.exports = function ({ pool, writeRateLimiter, normalizarDecimal, normaliz
       const { page, limit, offset } = paginacao(req);
       const { inicio, fim, status } = req.query;
       const eId = req.apiEmpresaId;
+
+      const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      if (inicio && !ISO_DATE_RE.test(inicio)) return erro(res, 400, 'Parâmetro inicio deve ser YYYY-MM-DD');
+      if (fim    && !ISO_DATE_RE.test(fim))    return erro(res, 400, 'Parâmetro fim deve ser YYYY-MM-DD');
 
       const params = [eId];
       let where = `WHERE empresa_id = $1`;
