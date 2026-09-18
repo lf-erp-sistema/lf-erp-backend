@@ -4,12 +4,12 @@ const { normalizarInt, normalizarDecimal, normalizarDataISO, hoje } = require('.
 const { obterPeriodo, adicionarFiltroPeriodo } = require('../utils/periodoUtils');
 const { requirePermissao } = require('../utils/permissoes');
 const { dispararWebhookComRetry } = require('../utils/webhookContabil');
-const { jsonErro } = require('../utils/routeHelpers');
+const { jsonErro, erroFromException } = require('../utils/routeHelpers');
 
 module.exports = function contasReceberRoutes({
   auth, writeRateLimiter, pool,
   validarAcessoEmpresa, atualizarStatusContasReceberPorEmpresa,
-  podeGerenciarFinanceiro, registrarLogFinanceiro, jsonErro
+  podeGerenciarFinanceiro, registrarLogFinanceiro
 }) {
   const router = express.Router();
 router.get('/contas-receber-clientes/:empresa', auth, requirePermissao(pool, 'financeiro', 'ver'), async (req, res) => {
@@ -221,7 +221,7 @@ THEN 'atrasado'
     });
 
     const pagina = Math.max(1, normalizarInt(req.query.page || 1));
-    const limite = Math.min(normalizarInt(req.query.limit || 50), 200);
+    const limite = Math.min(normalizarInt(req.query.limit) || 50, 200);
 
     const filterParamsCR = [...params];
     const resumoGlobalSqlCR = `
@@ -301,7 +301,7 @@ THEN 'atrasado'
     });
   } catch (error) {
     console.error('Erro ao buscar contas a receber:', error);
-    jsonErro(res, 500, 'Erro ao buscar contas a receber');
+    erroFromException(res, error, 'Erro ao buscar contas a receber');
   }
 });
 

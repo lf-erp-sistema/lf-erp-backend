@@ -1,5 +1,4 @@
 ﻿const express = require('express');
-const router = express.Router();
 
 const {
   obterPeriodo,
@@ -19,6 +18,7 @@ module.exports = function ({
   atualizarStatusContasPagarPorEmpresa,
   podeGerenciarFinanceiro
 }) {
+  const router = express.Router();
 
 
 

@@ -3,13 +3,13 @@ const express = require('express');
 const { normalizarDecimal, normalizarDataISO, hoje } = require('../utils/normalizadores');
 const { obterPeriodo, adicionarFiltroPeriodo, adicionarFiltroPeriodoRange } = require('../utils/periodoUtils');
 const { requirePermissao } = require('../utils/permissoes');
-const { jsonErro } = require('../utils/routeHelpers');
+const { jsonErro, erroFromException } = require('../utils/routeHelpers');
 
 module.exports = function lancamentosRoutes({
   auth, writeRateLimiter, pool,
   validarAcessoEmpresa, podeGerenciarFinanceiro,
   atualizarStatusContasReceberPorEmpresa,
-  registrarLogFinanceiro, jsonErro
+  registrarLogFinanceiro
 }) {
   const router = express.Router();
 router.post('/financeiro/lancamentos', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'criar'), async (req, res) => {
@@ -182,7 +182,7 @@ router.get('/financeiro/lancamentos/:empresa', auth, requirePermissao(pool, 'fin
     });
 
     const paginaL = Math.max(1, normalizarInt(req.query.page || 1));
-    const limiteL = Math.min(normalizarInt(req.query.limit || 50), 200);
+    const limiteL = Math.min(normalizarInt(req.query.limit) || 50, 200);
     const filterParamsL = [...params];
 
     const offsetL = (paginaL - 1) * limiteL;
@@ -224,7 +224,7 @@ router.get('/financeiro/lancamentos/:empresa', auth, requirePermissao(pool, 'fin
     });
   } catch (error) {
     console.error('Erro ao buscar lançamentos financeiros:', error);
-    jsonErro(res, 500, 'Erro ao buscar lançamentos financeiros');
+    erroFromException(res, error, 'Erro ao buscar lançamentos financeiros');
   }
 });
 

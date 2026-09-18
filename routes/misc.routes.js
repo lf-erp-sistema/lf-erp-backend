@@ -67,7 +67,7 @@ router.get('/compras/:empresa', auth, requirePermissao(pool, 'compras', 'ver'), 
     });
 
     const paginaC = Math.max(1, normalizarInt(req.query.page || 1));
-    const limiteC = Math.min(normalizarInt(req.query.limit || 100), 500);
+    const limiteC = Math.min(normalizarInt(req.query.limit) || 100, 500);
     const offsetC = (paginaC - 1) * limiteC;
     sql += ` ORDER BY c.id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limiteC, offsetC);

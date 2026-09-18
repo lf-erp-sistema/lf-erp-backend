@@ -237,7 +237,7 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
     criado_por,
     forma_pagamento
   }) {
-    const parcelas = Math.min(normalizarInt(quantidade_parcelas), 360);
+    const parcelas = Math.min(normalizarInt(quantidade_parcelas) || 0, 360);
     const valorTotal = normalizarDecimal(total);
     const primeiroVencimento = data_primeiro_vencimento || hoje();
 

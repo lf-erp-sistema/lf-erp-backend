@@ -4,12 +4,12 @@ const { normalizarInt, normalizarDecimal, normalizarDataISO, hoje } = require('.
 const { obterPeriodo, adicionarFiltroPeriodo } = require('../utils/periodoUtils');
 const { requirePermissao } = require('../utils/permissoes');
 const { dispararWebhookComRetry } = require('../utils/webhookContabil');
-const { jsonErro } = require('../utils/routeHelpers');
+const { jsonErro, erroFromException } = require('../utils/routeHelpers');
 
 module.exports = function contasPagarRoutes({
   auth, writeRateLimiter, pool,
   validarAcessoEmpresa, atualizarStatusContasPagarPorEmpresa,
-  registrarLogFinanceiro, jsonErro
+  registrarLogFinanceiro
 }) {
   const router = express.Router();
 router.get('/contas-pagar-fornecedores/:empresa', auth, requirePermissao(pool, 'financeiro', 'ver'), async (req, res) => {
@@ -142,7 +142,7 @@ router.get('/contas-pagar/:empresa', auth, requirePermissao(pool, 'financeiro', 
     });
 
     const paginaCP = Math.max(1, normalizarInt(req.query.page || 1));
-    const limiteCP = Math.min(normalizarInt(req.query.limit || 50), 200);
+    const limiteCP = Math.min(normalizarInt(req.query.limit) || 50, 200);
 
     const filterParamsCP = [...params];
     const resumoGlobalSqlCP = `
@@ -201,7 +201,7 @@ router.get('/contas-pagar/:empresa', auth, requirePermissao(pool, 'financeiro', 
     });
   } catch (error) {
     console.error('Erro ao buscar contas a pagar:', error);
-    jsonErro(res, 500, 'Erro ao buscar contas a pagar');
+    erroFromException(res, error, 'Erro ao buscar contas a pagar');
   }
 });
 

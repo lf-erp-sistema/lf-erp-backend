@@ -13,4 +13,11 @@ function ok(res, dados = {}, status = 200) {
   return res.status(status).json({ ...dados, sucesso: true });
 }
 
-module.exports = { erro, jsonErro, ok };
+// Extrai status do erro (respeita err.statusCode de obterPeriodo e similares)
+function erroFromException(res, err, msgFallback = 'Erro interno do servidor') {
+  const status = err?.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
+  const msg = status < 500 ? err.message : msgFallback;
+  return erro(res, status, msg);
+}
+
+module.exports = { erro, jsonErro, ok, erroFromException };

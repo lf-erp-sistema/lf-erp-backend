@@ -490,10 +490,10 @@ module.exports = ({
         clienteNomeFinal = clienteResult.rows[0].nome;
       }
 
-      const subtotalFinal = normalizarDecimal(subtotal);
-      const descontoFinal = normalizarDecimal(desconto);
-      const acrescimoFinal = normalizarDecimal(acrescimo);
-      const totalFinal = normalizarDecimal(total);
+      const subtotalFinal = normalizarDecimal(subtotal) ?? 0;
+      const descontoFinal = normalizarDecimal(desconto) ?? 0;
+      const acrescimoFinal = normalizarDecimal(acrescimo) ?? 0;
+      const totalFinal = normalizarDecimal(total) ?? 0;
 
       // FIX 2: rejeitar desconto/acréscimo negativos
       if (descontoFinal < 0) { await client.query('ROLLBACK'); return erro(res, 400, 'Desconto não pode ser negativo'); }
@@ -764,10 +764,10 @@ module.exports = ({
         clienteNomeFinal = clienteResult.rows[0].nome;
       }
 
-      const subtotalFinal = normalizarDecimal(subtotal);
-      const descontoFinal = normalizarDecimal(desconto);
-      const acrescimoFinal = normalizarDecimal(acrescimo);
-      const totalFinal = normalizarDecimal(total);
+      const subtotalFinal = normalizarDecimal(subtotal) ?? 0;
+      const descontoFinal = normalizarDecimal(desconto) ?? 0;
+      const acrescimoFinal = normalizarDecimal(acrescimo) ?? 0;
+      const totalFinal = normalizarDecimal(total) ?? 0;
 
       // FIX 2: rejeitar desconto/acréscimo negativos
       if (descontoFinal < 0) { await client.query('ROLLBACK'); return erro(res, 400, 'Desconto não pode ser negativo'); }
@@ -1112,7 +1112,7 @@ module.exports = ({
         castDate: false
       });
 
-      const limite = Math.min(normalizarInt(req.query.limit || 100), 500);
+      const limite = Math.min(normalizarInt(req.query.limit) || 100, 500);
       const offset = Math.max(normalizarInt(req.query.offset || 0), 0);
       const filterParams = [...params];
       const limIdx = filterParams.length + 1;

@@ -26,7 +26,9 @@ function obterPeriodo(req) {
   const dataInicial = normalizarDataISO(req.query.data_inicial || req.query.inicio || '');
   const dataFinal   = normalizarDataISO(req.query.data_final  || req.query.fim   || '');
   if (dataInicial && dataFinal && dataInicial > dataFinal) {
-    throw new Error(`Período inválido: início (${dataInicial}) após fim (${dataFinal})`);
+    const err = new Error(`Período inválido: início (${dataInicial}) após fim (${dataFinal})`);
+    err.statusCode = 400;
+    throw err;
   }
   return { dataInicial, dataFinal };
 }

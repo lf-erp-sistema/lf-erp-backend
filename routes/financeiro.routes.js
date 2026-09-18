@@ -1,5 +1,4 @@
 const express = require('express');
-const router = express.Router();
 
 const { requirePermissao } = require('../utils/permissoes');
 const { obterPeriodo, adicionarFiltroPeriodo } = require('../utils/periodoUtils');
@@ -16,6 +15,7 @@ module.exports = function ({
   atualizarStatusContasReceberPorEmpresa,
   atualizarStatusContasPagarPorEmpresa
 }) {
+  const router = express.Router();
 
 
   // ================= FLUXO DE CAIXA =================
