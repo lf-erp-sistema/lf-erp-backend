@@ -6,7 +6,7 @@ const { jsonErro } = require('../utils/routeHelpers');
 module.exports = function conciliacaoRoutes({
   auth, writeRateLimiter, pool,
   validarAcessoEmpresa, podeGerenciarFinanceiro,
-  jsonUpload, jsonErro
+  jsonUpload
 }) {
   const router = express.Router();
 // ================= CONCILIAÇÃO BANCÁRIA =================
