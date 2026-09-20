@@ -3,6 +3,7 @@
 const express = require('express');
 const bcrypt  = require('bcrypt');
 const { jsonErro } = require('../utils/routeHelpers');
+const { obterPermissoes } = require('../utils/permissoes');
 
 module.exports = function usuariosRoutes({
   auth,
@@ -488,6 +489,21 @@ module.exports = function usuariosRoutes({
     } catch (err) {
       console.error('[lixeira excluir]', err.message);
       jsonErro(res, 500, 'Erro ao excluir registro permanentemente');
+    }
+  });
+
+  // ── GET /permissoes/minhas ─────────────────────────────────────────────────
+  router.get('/permissoes/minhas', auth, async (req, res) => {
+    try {
+      const tipo = req.user?.tipo;
+      if (tipo === 'admin' || req.user?.is_saas_owner) {
+        return res.json({ sucesso: true, isAdmin: true, permissoes: null, tipo });
+      }
+      const permissoes = await obterPermissoes(pool, req.user.id, req.user.empresa_id, tipo);
+      res.json({ sucesso: true, isAdmin: false, permissoes, tipo });
+    } catch (err) {
+      console.error('[permissoes/minhas]', err.message);
+      jsonErro(res, 500, 'Erro ao carregar permissões');
     }
   });
 
