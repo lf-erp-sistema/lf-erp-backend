@@ -71,10 +71,10 @@ function createPlanoUtils(pool, { hoje }) {
     }
 
     const limites = {
-      usuarios:     { tabela: 'usuarios',     coluna: 'limite_usuarios' },
-      produtos:     { tabela: 'produtos',     coluna: 'limite_produtos' },
-      clientes:     { tabela: 'clientes',     coluna: 'limite_clientes' },
-      fornecedores: { tabela: 'fornecedores', coluna: 'limite_fornecedores' }
+      usuarios:     { tabela: 'usuarios',     coluna: 'limite_usuarios',     softDelete: false },
+      produtos:     { tabela: 'produtos',     coluna: 'limite_produtos',     softDelete: true },
+      clientes:     { tabela: 'clientes',     coluna: 'limite_clientes',     softDelete: true },
+      fornecedores: { tabela: 'fornecedores', coluna: 'limite_fornecedores', softDelete: true }
     };
 
     const config = limites[recurso];
@@ -92,7 +92,7 @@ function createPlanoUtils(pool, { hoje }) {
     const totalResult = await pool.query(
       `SELECT COUNT(*) AS total FROM ${config.tabela}
        WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2))
-         AND deletado_em IS NULL`,
+         ${config.softDelete ? 'AND deletado_em IS NULL' : ''}`,
       [empresaResolvida.id, empresaResolvida.nome]
     );
 

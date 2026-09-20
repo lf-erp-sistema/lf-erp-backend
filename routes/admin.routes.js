@@ -6,7 +6,7 @@ const { encryptField, decryptField } = require('../utils/pixCrypto');
 const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas } = require('../utils/asaas');
 const { enviarEmailBoasVindas, getSaasSmtp, criarTransporter } = require('../utils/email');
 const { jsonErro } = require('../utils/routeHelpers');
-const createPlanoUtils = require('../utils/plano');
+const { createPlanoUtils } = require('../utils/plano');
 
 module.exports = function adminRoutes({
   auth, writeRateLimiter, pool,
