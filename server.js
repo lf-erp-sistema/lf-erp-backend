@@ -63,6 +63,7 @@ const imagensRoutes = require('./routes/imagens.routes');
 const orcamentosRoutes = require('./routes/orcamentos.routes');
 const pedidosRoutes = require('./routes/pedidos.routes');
 const comissoesRoutes = require('./routes/comissoes.routes');
+const ordensServicoRoutes = require('./routes/ordensServico.routes');
 const portalRoutes    = require('./routes/portal.routes');
 const caixaRoutes     = require('./routes/caixa.routes');
 const devolucoesRoutes = require('./routes/devolucoes.routes');
@@ -464,6 +465,19 @@ app.use(
     pool,
     validarAcessoEmpresa,
     normalizarDecimal,
+    normalizarDataISO
+  })
+);
+
+app.use(
+  '/ordens-servico',
+  ordensServicoRoutes({
+    auth,
+    writeRateLimiter,
+    pool,
+    validarAcessoEmpresa,
+    normalizarDecimal,
+    normalizarInt,
     normalizarDataISO
   })
 );
