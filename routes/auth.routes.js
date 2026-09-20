@@ -207,8 +207,8 @@ module.exports = function authRoutes({
     res.json({ sucesso: true, nonce });
   });
 
-  // ── POST /logout ───────────────────────────────────────────────────────────
-  router.post('/logout', auth, (req, res) => {
+  // ── POST /auth/logout (e alias /logout para retrocompatibilidade) ──────────
+  router.post(['/auth/logout', '/logout'], auth, (req, res) => {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
     if (token) {
