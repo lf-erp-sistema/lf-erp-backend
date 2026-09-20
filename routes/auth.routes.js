@@ -144,7 +144,8 @@ module.exports = function authRoutes({
           perfil: user.tipo,
           tipo: user.tipo,
           empresa: user.empresa_nome_real || user.empresa || null,
-          empresa_id: user.empresa_id_real || user.empresa_id || null
+          empresa_id: user.empresa_id_real || user.empresa_id || null,
+          is_saas_owner: Boolean(user.is_saas_owner)
         }
       });
     } catch (error) {
