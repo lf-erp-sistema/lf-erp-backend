@@ -232,7 +232,7 @@ function sseNotificarEmpresa(empresaId) {
 }
 
 // GET /sse-notificacoes â€” stream de eventos para o frontend
-router.get('/sse-notificacoes', auth, requirePermissao(pool, 'configuracoes', 'ver'), async (req, res) => {
+router.get('/sse-notificacoes', auth, async (req, res) => {
   try {
     const empresaResolvida = await validarAcessoEmpresa(req, null, null);
     if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
