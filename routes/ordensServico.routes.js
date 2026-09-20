@@ -283,6 +283,63 @@ module.exports = ({
     }
   });
 
+  // ── GET /ordens-servico/catalogo ────────────────────────────────────────
+  router.get('/catalogo', auth, async (req, res) => {
+    try {
+      const { empresa, busca, categoria } = req.query;
+      const empresaResolvida = await validarAcessoEmpresa(req, empresa);
+      if (!empresaResolvida) return erro(res, 403, 'Sem acesso');
+
+      const params = [empresaResolvida.id];
+      const conds  = [`(empresa_id = $1 OR empresa_id IS NULL)`, `ativo = TRUE`];
+      let p = 2;
+
+      if (categoria) {
+        conds.push(`categoria = $${p++}`);
+        params.push(categoria);
+      }
+      if (busca) {
+        conds.push(`(nome ILIKE $${p} OR categoria ILIKE $${p})`);
+        params.push(`%${busca}%`);
+        p++;
+      }
+
+      const result = await pool.query(
+        `SELECT id, categoria, nome, valor_padrao
+         FROM servicos_catalogo
+         WHERE ${conds.join(' AND ')}
+         ORDER BY categoria, nome
+         LIMIT 200`,
+        params
+      );
+
+      return ok(res, { servicos: result.rows });
+    } catch (e) {
+      console.error('[ordensServico] GET /catalogo', e);
+      return erro(res, 500, 'Erro ao buscar catálogo de serviços');
+    }
+  });
+
+  // ── GET /ordens-servico/catalogo/categorias ──────────────────────────────
+  router.get('/catalogo/categorias', auth, async (req, res) => {
+    try {
+      const { empresa } = req.query;
+      const empresaResolvida = await validarAcessoEmpresa(req, empresa);
+      if (!empresaResolvida) return erro(res, 403, 'Sem acesso');
+
+      const result = await pool.query(
+        `SELECT DISTINCT categoria FROM servicos_catalogo
+         WHERE (empresa_id = $1 OR empresa_id IS NULL) AND ativo = TRUE
+         ORDER BY categoria`,
+        [empresaResolvida.id]
+      );
+      return ok(res, { categorias: result.rows.map(r => r.categoria) });
+    } catch (e) {
+      console.error('[ordensServico] GET /catalogo/categorias', e);
+      return erro(res, 500, 'Erro ao buscar categorias');
+    }
+  });
+
   // ── DELETE /ordens-servico/:id ───────────────────────────────────────────
   router.delete('/:id', auth, writeRateLimiter, requirePermissao(pool, 'ordens_servico', 'deletar'), async (req, res) => {
     try {
