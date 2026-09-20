@@ -6,6 +6,7 @@ const { encryptField, decryptField } = require('../utils/pixCrypto');
 const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas } = require('../utils/asaas');
 const { enviarEmailBoasVindas, getSaasSmtp, criarTransporter } = require('../utils/email');
 const { jsonErro } = require('../utils/routeHelpers');
+const createPlanoUtils = require('../utils/plano');
 
 module.exports = function adminRoutes({
   auth, writeRateLimiter, pool,
@@ -13,6 +14,7 @@ module.exports = function adminRoutes({
   apenasAdmin, _configCache, _planoCache,
 }) {
   const router = express.Router();
+  const { obterPlanoEmpresa } = createPlanoUtils(pool, { hoje });
 // ================= CONFIGURAÇÕES =================
 
 // BUSCAR CONFIGURAÇÕES
