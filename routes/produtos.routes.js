@@ -142,13 +142,23 @@ module.exports = ({
             [String(empresaResolvida.id)]
           );
           const cbRes = await prodClient.query(
-            `SELECT COALESCE(MAX(CAST(codigo_barras AS BIGINT)), 0) AS max_cb
-             FROM produtos
-             WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2))
-               AND codigo_barras ~ '^[0-9]+$'`,
+            `SELECT n AS next_cb
+             FROM generate_series(1, (
+               SELECT COALESCE(MAX(CAST(codigo_barras AS BIGINT)), 0) + 1
+               FROM produtos
+               WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2))
+                 AND codigo_barras ~ '^[0-9]+$'
+             )) AS gs(n)
+             WHERE NOT EXISTS (
+               SELECT 1 FROM produtos
+               WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2))
+                 AND codigo_barras ~ '^[0-9]+$'
+                 AND CAST(codigo_barras AS BIGINT) = gs.n
+             )
+             ORDER BY n LIMIT 1`,
             [empresaResolvida.id, empresaResolvida.nome]
           );
-          codigoBarrasFinal = String(Number(cbRes.rows[0].max_cb) + 1).padStart(6, '0');
+          codigoBarrasFinal = String(Number(cbRes.rows[0].next_cb)).padStart(6, '0');
         }
 
         const result = await prodClient.query(
