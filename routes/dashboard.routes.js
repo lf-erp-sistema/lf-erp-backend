@@ -75,6 +75,7 @@ router.get('/dashboard', auth, requirePermissao(pool, 'dashboard', 'ver'), async
     let clientesWhere = `
   WHERE 1=1
   ${adicionarFiltroEmpresaSaaS({ params: clientesParams, empresaResolvida })}
+  AND deletado_em IS NULL
 `;
 
     let produtosWhere = `
@@ -174,7 +175,7 @@ router.get('/dashboard', auth, requirePermissao(pool, 'dashboard', 'ver'), async
     const vAntParams = [];
     const cAntParams = [];
     let vAntWhere = `WHERE 1=1 ${adicionarFiltroEmpresaSaaS({ params: vAntParams, empresaResolvida })}`;
-    let cAntWhere = `WHERE 1=1 ${adicionarFiltroEmpresaSaaS({ params: cAntParams, empresaResolvida })}`;
+    let cAntWhere = `WHERE 1=1 ${adicionarFiltroEmpresaSaaS({ params: cAntParams, empresaResolvida })} AND deletado_em IS NULL`;
     if (prevInicial) {
       vAntParams.push(prevInicial); vAntWhere += ` AND data >= $${vAntParams.length}`;
       cAntParams.push(prevInicial); cAntWhere += ` AND criado_em::date >= $${cAntParams.length}`;
