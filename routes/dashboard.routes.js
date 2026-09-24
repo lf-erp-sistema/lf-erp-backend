@@ -122,12 +122,8 @@ router.get('/dashboard', auth, requirePermissao(pool, 'dashboard', 'ver'), async
       castDate: false
     });
 
-    clientesWhere += adicionarFiltroPeriodo({
-      campo: 'criado_em',
-      params: clientesParams,
-      dataInicial,
-      dataFinal
-    });
+    // clientesWhere não filtra por período: o card exibe total de clientes na base,
+    // não novos no período (consistente com produtosWhere que também não filtra)
 
     lancamentosWhere += adicionarFiltroPeriodo({
       campo: 'pagamento_data',
@@ -175,10 +171,10 @@ router.get('/dashboard', auth, requirePermissao(pool, 'dashboard', 'ver'), async
     const vAntParams = [];
     const cAntParams = [];
     let vAntWhere = `WHERE 1=1 ${adicionarFiltroEmpresaSaaS({ params: vAntParams, empresaResolvida })}`;
+    // cAntWhere conta clientes ativos até o final do período anterior (snapshot cumulativo)
     let cAntWhere = `WHERE 1=1 ${adicionarFiltroEmpresaSaaS({ params: cAntParams, empresaResolvida })} AND deletado_em IS NULL`;
     if (prevInicial) {
       vAntParams.push(prevInicial); vAntWhere += ` AND data >= $${vAntParams.length}`;
-      cAntParams.push(prevInicial); cAntWhere += ` AND criado_em::date >= $${cAntParams.length}`;
     }
     if (prevFinal) {
       vAntParams.push(prevFinal); vAntWhere += ` AND data <= $${vAntParams.length}`;
