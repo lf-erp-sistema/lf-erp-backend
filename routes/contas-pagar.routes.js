@@ -349,6 +349,127 @@ router.get('/contas-pagar/origem-compra/:id', auth, requirePermissao(pool, 'fina
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// POST /contas-pagar/manual — criação manual (avulsa, parcelada ou fixa mensal)
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/contas-pagar/manual', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'editar'), async (req, res) => {
+  const {
+    empresa: empresaParam,
+    empresa_id: empresaIdParam,
+    fornecedor_id,
+    fornecedor_nome,
+    descricao,
+    observacao,
+    forma_pagamento,
+    valor,
+    data_vencimento,
+    recorrencia = 'nao_recorrente', // nao_recorrente | parcelar | fixa_mensal
+    tipo_valor   = 'parcela',       // parcela | total
+    parcela_inicial = 1,
+    quantidade   = 1,
+    periodicidade = 30              // dias entre parcelas
+  } = req.body || {};
+
+  const empresaResolvida = await validarAcessoEmpresa(req, empresaParam, empresaIdParam ? Number(empresaIdParam) : undefined);
+  if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
+
+  const valorNum = normalizarDecimal(valor);
+  if (!valorNum || valorNum <= 0) return jsonErro(res, 400, 'Valor inválido');
+
+  const dataBase = normalizarDataISO(data_vencimento);
+  if (!dataBase) return jsonErro(res, 400, 'Data de vencimento inválida');
+
+  const nomeFormatado = (fornecedor_nome || '').trim() || 'Avulso';
+  const fornId = normalizarInt(fornecedor_id) || null;
+  const qtd    = Math.min(360, Math.max(1, normalizarInt(quantidade) || 1));
+  const parcIni = Math.min(qtd, Math.max(1, normalizarInt(parcela_inicial) || 1));
+  const periodo = Math.max(1, normalizarInt(periodicidade) || 30);
+  const desc   = (descricao || '').trim() || 'Conta a pagar';
+  const obs    = (observacao || '').trim();
+  const forma  = (forma_pagamento || '').trim() || null;
+
+  // Quantas linhas criar
+  let linhas;
+  if (recorrencia === 'parcelar') {
+    // Parcelas que faltam: de parcIni até qtd (total)
+    linhas = qtd - parcIni + 1;
+  } else if (recorrencia === 'fixa_mensal') {
+    linhas = qtd; // cada linha é independente (parcela 1/1)
+  } else {
+    linhas = 1;
+  }
+  linhas = Math.max(1, linhas);
+
+  // Valor por linha
+  let valorLinha;
+  if (tipo_valor === 'total' && recorrencia === 'parcelar' && qtd > 1) {
+    valorLinha = Number((valorNum / qtd).toFixed(2));
+  } else {
+    valorLinha = valorNum;
+  }
+  // Ajuste de centavos na última linha (somente quando total dividido)
+  const valorUltima = (tipo_valor === 'total' && recorrencia === 'parcelar' && qtd > 1)
+    ? Number((valorNum - valorLinha * (linhas - 1)).toFixed(2))
+    : valorLinha;
+
+  function addDias(isoDate, dias) {
+    const d = new Date(`${isoDate}T12:00:00`);
+    d.setDate(d.getDate() + dias);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const criadas = [];
+    for (let i = 0; i < linhas; i++) {
+      const numParcela = recorrencia === 'parcelar' ? parcIni + i : 1;
+      const totParcelas = recorrencia === 'parcelar' ? qtd : 1;
+      const venc = i === 0 ? dataBase : addDias(dataBase, i * periodo);
+      const valorInsert = (i === linhas - 1) ? valorUltima : valorLinha;
+      const descInsert = recorrencia === 'parcelar'
+        ? `${desc} — Parcela ${numParcela}/${totParcelas}`
+        : recorrencia === 'fixa_mensal'
+          ? `${desc} — Mês ${i + 1}`
+          : desc;
+
+      const r = await client.query(
+        `INSERT INTO contas_pagar
+           (empresa, empresa_id, fornecedor_id, fornecedor_nome, descricao,
+            parcela, total_parcelas, valor, valor_original,
+            data_vencimento, status, forma_pagamento, observacao,
+            criado_por, criado_em, atualizado_em)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,'pendente',$10,$11,$12,
+                 NOW() AT TIME ZONE 'America/Fortaleza',
+                 NOW() AT TIME ZONE 'America/Fortaleza')
+         RETURNING id`,
+        [
+          empresaResolvida.nome, empresaResolvida.id,
+          fornId, nomeFormatado, descInsert,
+          numParcela, totParcelas,
+          valorInsert, venc,
+          forma, obs, req.user?.id || null
+        ]
+      );
+      criadas.push(r.rows[0].id);
+    }
+
+    await client.query('COMMIT');
+
+    try { await atualizarStatusContasPagarPorEmpresa(empresaResolvida.nome, empresaResolvida.id); } catch {}
+
+    res.json({ sucesso: true, ids: criadas, mensagem: `${criadas.length} título(s) criado(s)` });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[cp-manual] Erro:', err.message);
+    jsonErro(res, 500, 'Erro ao criar conta a pagar');
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/contas-pagar/pagar/:id', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'editar'), async (req, res) => {
   const id = Number(req.params.id);
   if (!id || isNaN(id)) return jsonErro(res, 400, 'ID inválido');
