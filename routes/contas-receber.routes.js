@@ -1093,6 +1093,9 @@ router.post('/contas-receber/estornar-parcial/:lancamentoId', auth, writeRateLim
 
 router.delete('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'deletar'), async (req, res) => {
   const id = Number(req.params.id);
+  const escopoRaw = req.query.escopo || 'apenas_esta';
+  const escopo = ['apenas_esta', 'esta_e_proximas', 'todas'].includes(escopoRaw) ? escopoRaw : 'apenas_esta';
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1120,11 +1123,36 @@ router.delete('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(po
       return jsonErro(res, 403, 'Sem acesso');
     }
 
+    // Contas de venda: apenas escopo bulk é permitido
     if (conta.venda_id) {
-      await client.query('ROLLBACK');
-      return jsonErro(res, 400, 'Contas originadas de venda não podem ser excluídas');
+      if (escopo === 'apenas_esta') {
+        await client.query('ROLLBACK');
+        return jsonErro(res, 400, 'Contas originadas de venda não podem ser excluídas individualmente. Use "Esta e as próximas" ou "Todas".');
+      }
+
+      // Bulk delete: remove pendentes/atrasadas da mesma venda
+      const params = [conta.venda_id, empresaResolvida.id, empresaResolvida.nome];
+      let whereParc = '';
+      if (escopo === 'esta_e_proximas') {
+        whereParc = `AND parcela >= $4`;
+        params.push(conta.parcela);
+      }
+
+      const delResult = await client.query(
+        `DELETE FROM contas_receber
+         WHERE venda_id = $1
+           AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))
+           AND status NOT IN ('pago', 'parcial', 'parcial_atrasado')
+           ${whereParc}
+         RETURNING id`,
+        params
+      );
+
+      await client.query('COMMIT');
+      return res.json({ sucesso: true, mensagem: `${delResult.rowCount} parcela(s) excluída(s)` });
     }
 
+    // Conta manual (sem venda_id) — comportamento existente
     if (['parcial', 'parcial_atrasado'].includes(String(conta.status || '').toLowerCase())) {
       const recebimentosAtivosResult = await client.query(
         `SELECT COUNT(*) AS total FROM lancamentos_financeiros
@@ -1172,8 +1200,8 @@ router.delete('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(po
     res.json({ sucesso: true, mensagem: 'Conta manual excluída com sucesso' });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Erro ao excluir conta manual:', error.message);
-    jsonErro(res, 500, 'Erro ao excluir conta manual');
+    console.error('Erro ao excluir conta:', error.message);
+    jsonErro(res, 500, 'Erro ao excluir conta');
   } finally {
     client.release();
   }
@@ -1182,7 +1210,8 @@ router.delete('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(po
 // ================= EDIÇÃO DE CONTA A RECEBER =================
 router.put('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'editar'), async (req, res) => {
   const id = Number(req.params.id);
-  const { observacao, data_vencimento, valor } = req.body;
+  const { observacao, data_vencimento, valor, escopo } = req.body;
+  const escopoValido = ['apenas_esta', 'esta_e_proximas', 'todas'].includes(escopo) ? escopo : 'apenas_esta';
 
   try {
     const contaResult = req.user?.is_saas_owner
@@ -1220,8 +1249,37 @@ router.put('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool,
 
     if (!sets.length) return jsonErro(res, 400, 'Nenhum campo para atualizar');
 
-    params.push(id);
-    await pool.query(`UPDATE contas_receber SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+    const usarBulk = escopoValido !== 'apenas_esta' && conta.venda_id;
+
+    if (!usarBulk) {
+      params.push(id);
+      await pool.query(
+        `UPDATE contas_receber SET ${sets.join(', ')} WHERE id = $${params.length}`,
+        params
+      );
+    } else {
+      // Bulk: atualiza parcelas pendentes/atrasadas do mesmo venda_id
+      const ei = params.length + 1; // empresa_id
+      const en = params.length + 2; // empresa nome
+      const vi = params.length + 3; // venda_id
+      const extraParams = [empresaResolvida.id, empresaResolvida.nome, conta.venda_id];
+
+      let whereParc = '';
+      if (escopoValido === 'esta_e_proximas') {
+        whereParc = `AND parcela >= $${params.length + 4}`;
+        extraParams.push(conta.parcela);
+      }
+
+      await pool.query(
+        `UPDATE contas_receber
+         SET ${sets.join(', ')}
+         WHERE (empresa_id = $${ei} OR (empresa_id IS NULL AND empresa = $${en}))
+           AND venda_id = $${vi}
+           AND status NOT IN ('pago', 'parcial', 'parcial_atrasado')
+           ${whereParc}`,
+        [...params, ...extraParams]
+      );
+    }
 
     return res.json({ ok: true });
   } catch (err) {
