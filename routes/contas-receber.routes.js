@@ -1179,6 +1179,51 @@ router.delete('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(po
   }
 });
 
+// ================= EDIÇÃO DE CONTA A RECEBER =================
+router.put('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'editar'), async (req, res) => {
+  const id = Number(req.params.id);
+  const { observacao, data_vencimento } = req.body;
+
+  try {
+    const contaResult = req.user?.is_saas_owner
+      ? await pool.query(`SELECT * FROM contas_receber WHERE id = $1 LIMIT 1`, [id])
+      : await pool.query(
+          `SELECT * FROM contas_receber WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3)) LIMIT 1`,
+          [id, req.user.empresa_id || 0, req.user.empresa || '']
+        );
+
+    if (contaResult.rowCount === 0) return jsonErro(res, 404, 'Conta não encontrada');
+
+    const conta = contaResult.rows[0];
+    const empresaResolvida = await validarAcessoEmpresa(req, conta.empresa, conta.empresa_id);
+    if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
+
+    const sets = [];
+    const params = [];
+
+    if (observacao !== undefined) {
+      params.push(String(observacao).trim());
+      sets.push(`observacao = $${params.length}`);
+    }
+    if (data_vencimento !== undefined) {
+      const dataISO = normalizarDataISO(data_vencimento);
+      if (!dataISO) return jsonErro(res, 400, 'Data inválida');
+      params.push(dataISO);
+      sets.push(`data_vencimento = $${params.length}`);
+    }
+
+    if (!sets.length) return jsonErro(res, 400, 'Nenhum campo para atualizar');
+
+    params.push(id);
+    await pool.query(`UPDATE contas_receber SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PUT /contas-receber/:id]', err.message);
+    return jsonErro(res, 500, 'Erro ao editar conta');
+  }
+});
+
 // ================= CRIAÇÃO MANUAL DE CONTA A RECEBER =================
 router.post('/contas-receber/manual', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'criar'), async (req, res) => {
   try {
