@@ -1152,7 +1152,22 @@ router.delete('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(po
       return res.json({ sucesso: true, mensagem: `${delResult.rowCount} parcela(s) excluída(s)` });
     }
 
-    // Conta manual (sem venda_id) — comportamento existente
+    // Conta manual com escopo bulk: exclui todas pendentes do mesmo cliente
+    if (escopo !== 'apenas_esta' && conta.cliente_id) {
+      const delResult = await client.query(
+        `DELETE FROM contas_receber
+         WHERE cliente_id = $1
+           AND venda_id IS NULL
+           AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))
+           AND status NOT IN ('pago', 'parcial', 'parcial_atrasado')
+         RETURNING id`,
+        [conta.cliente_id, empresaResolvida.id, empresaResolvida.nome]
+      );
+      await client.query('COMMIT');
+      return res.json({ sucesso: true, mensagem: `${delResult.rowCount} conta(s) excluída(s)` });
+    }
+
+    // Conta manual (sem venda_id) — exclusão individual
     if (['parcial', 'parcial_atrasado'].includes(String(conta.status || '').toLowerCase())) {
       const recebimentosAtivosResult = await client.query(
         `SELECT COUNT(*) AS total FROM lancamentos_financeiros
