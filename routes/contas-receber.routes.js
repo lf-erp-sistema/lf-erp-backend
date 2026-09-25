@@ -1182,7 +1182,7 @@ router.delete('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(po
 // ================= EDIÇÃO DE CONTA A RECEBER =================
 router.put('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'editar'), async (req, res) => {
   const id = Number(req.params.id);
-  const { observacao, data_vencimento } = req.body;
+  const { observacao, data_vencimento, valor } = req.body;
 
   try {
     const contaResult = req.user?.is_saas_owner
@@ -1210,6 +1210,12 @@ router.put('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool,
       if (!dataISO) return jsonErro(res, 400, 'Data inválida');
       params.push(dataISO);
       sets.push(`data_vencimento = $${params.length}`);
+    }
+    if (valor !== undefined) {
+      const valorFinal = normalizarDecimal(valor);
+      if (valorFinal <= 0) return jsonErro(res, 400, 'Valor inválido');
+      params.push(valorFinal);
+      sets.push(`valor = $${params.length}`);
     }
 
     if (!sets.length) return jsonErro(res, 400, 'Nenhum campo para atualizar');
