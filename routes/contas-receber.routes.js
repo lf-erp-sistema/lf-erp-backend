@@ -1299,7 +1299,9 @@ router.post('/contas-receber/manual', auth, writeRateLimiter, requirePermissao(p
       valor,
       data_vencimento,
       observacao,
-      forma_pagamento
+      forma_pagamento,
+      parcela,
+      total_parcelas
     } = req.body;
 
     const empresaResolvida = await validarAcessoEmpresa(req, empresa);
@@ -1356,8 +1358,8 @@ router.post('/contas-receber/manual', auth, writeRateLimiter, requirePermissao(p
 VALUES (
   $1,$2,$3,$4,$5,$6,$6,
   'pendente',
-  1,
-  1,
+  $9,
+  $10,
   $7,
   $8,
   NOW(),
@@ -1373,7 +1375,9 @@ RETURNING *
         observacao || descricao || 'Promissória antiga cadastrada manualmente',
         valorFinal,
         dataVencimento,
-        forma_pagamento || 'promissoria'
+        forma_pagamento || 'promissoria',
+        normalizarInt(parcela) || 1,
+        normalizarInt(total_parcelas) || 1
       ]
     );
 
