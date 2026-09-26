@@ -323,7 +323,7 @@ module.exports = function ({
         pool.query(
           `SELECT
              data_vencimento AS data,
-             SUM(COALESCE(valor_atualizado, valor)) AS valor,
+             SUM(valor) AS valor,
              COUNT(*) AS qtd
            FROM contas_pagar
            WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2))
