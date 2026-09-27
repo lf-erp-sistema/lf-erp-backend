@@ -64,6 +64,7 @@ const orcamentosRoutes = require('./routes/orcamentos.routes');
 const pedidosRoutes = require('./routes/pedidos.routes');
 const comissoesRoutes = require('./routes/comissoes.routes');
 const ordensServicoRoutes = require('./routes/ordensServico.routes');
+const assistenciaRoutes   = require('./routes/assistencia.routes');
 const portalRoutes    = require('./routes/portal.routes');
 const caixaRoutes     = require('./routes/caixa.routes');
 const devolucoesRoutes = require('./routes/devolucoes.routes');
@@ -479,6 +480,40 @@ app.use(
     normalizarDecimal,
     normalizarInt,
     normalizarDataISO
+  })
+);
+
+// Feature flags da empresa — retorna ao frontend os módulos habilitados
+app.get('/minha-empresa/features', auth, async (req, res) => {
+  try {
+    const empresaId = req.user?.empresa_id;
+    if (!empresaId) return res.json({ sucesso: true, features: {} });
+    const r = await pool.query(
+      `SELECT feature, habilitado FROM empresa_features WHERE empresa_id = $1`,
+      [empresaId]
+    );
+    const features = {};
+    r.rows.forEach(row => { features[row.feature] = row.habilitado; });
+    return res.json({ sucesso: true, features });
+  } catch (e) {
+    console.error('[minha-empresa/features]', e);
+    return res.json({ sucesso: true, features: {} });
+  }
+});
+
+app.use(
+  '/assistencia',
+  assistenciaRoutes({
+    auth,
+    writeRateLimiter,
+    pool,
+    validarAcessoEmpresa,
+    normalizarDecimal,
+    normalizarInt,
+    normalizarDataISO,
+    hoje,
+    registrarMovimentacaoEstoque,
+    criarParcelasContasReceber,
   })
 );
 
