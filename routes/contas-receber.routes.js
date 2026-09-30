@@ -793,8 +793,8 @@ WHEN data_vencimento IS NOT NULL AND data_vencimento < $2 THEN 'atrasado'
       }
     });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao baixar conta:', error);
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[cr-pagar] ERRO id=%d: %s | %s', id, error.message, error.stack?.split('\n')[1]?.trim() || '');
     jsonErro(res, 500, 'Erro ao baixar conta');
   } finally {
     client.release();
