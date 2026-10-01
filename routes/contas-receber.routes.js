@@ -681,8 +681,8 @@ router.post('/contas-receber/pagar/:id', auth, writeRateLimiter, requirePermissa
       SET status = $1,
           valor_original = COALESCE(valor_original, valor),
           valor = $2,
-          data_pagamento = CASE WHEN $1 = 'pago' THEN $3 ELSE data_pagamento END,
-          forma_pagamento = CASE WHEN $7 IS NOT NULL AND $7 != '' THEN $7 ELSE forma_pagamento END,
+          data_pagamento = CASE WHEN $1 = 'pago' THEN $3::text ELSE data_pagamento END,
+          forma_pagamento = CASE WHEN $7::text IS NOT NULL AND $7::text != '' THEN $7::text ELSE forma_pagamento END,
           atualizado_em = NOW()
       WHERE id = $4 AND (empresa_id = $5 OR (empresa_id IS NULL AND empresa = $6))
       `,
@@ -803,7 +803,7 @@ VALUES (
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('[cr-pagar] ERRO id=%d: %s\n%s', id, error.message, error.stack || '');
-    jsonErro(res, 500, `Erro ao baixar conta: ${error.message}`);
+    jsonErro(res, 500, 'Erro ao baixar conta');
   } finally {
     client.release();
   }
