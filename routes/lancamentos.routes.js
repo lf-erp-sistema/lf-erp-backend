@@ -515,7 +515,9 @@ router.delete('/financeiro/lancamentos/:id', auth, writeRateLimiter, requirePerm
 
       // Restaurar CR se este lançamento era uma baixa parcial de conta a receber
       if (atual.conta_receber_id) {
-        const valorLancamento = normalizarDecimal(atual.valor || 0);
+        // atual.valor vem do banco (NUMERIC string "480.00"): usar Number(),
+        // não normalizarDecimal (que trataria o ponto como separador de milhar BR).
+        const valorLancamento = Number(atual.valor || 0);
         await client.query(
           `UPDATE contas_receber
            SET valor = valor + $1,

@@ -518,7 +518,10 @@ router.post('/contas-pagar/pagar/:id', auth, writeRateLimiter, requirePermissao(
     }
 
     const dataPagamento = normalizarDataISO(req.body?.data_pagamento) || hoje();
-    const valorAtualCP = normalizarDecimal(conta.valor || 0);
+    // conta.valor vem do PostgreSQL como string "480.00" (NUMERIC). normalizarDecimal
+    // trata ponto como separador de milhar (formato BR) e corromperia para 48000.
+    // Para valores do banco usamos Number(); normalizarDecimal é só para input do usuário.
+    const valorAtualCP = Number(conta.valor || 0);
     const valorPagoCP = normalizarDecimal(req.body?.valor_pago || 0);
     if (valorPagoCP > 0 && valorPagoCP > valorAtualCP) {
       await client.query('ROLLBACK');

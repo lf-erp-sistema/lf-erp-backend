@@ -654,7 +654,10 @@ router.post('/contas-receber/pagar/:id', auth, writeRateLimiter, requirePermissa
       return jsonErro(res, 400, 'Esta conta já está paga');
     }
 
-    const valorAtual = normalizarDecimal(conta.valor || 0);
+    // conta.valor vem do PostgreSQL como string "480.00" (NUMERIC). normalizarDecimal
+    // trata ponto como separador de milhar (formato BR) e corromperia para 48000.
+    // Para valores do banco usamos Number(); normalizarDecimal é só para input do usuário.
+    const valorAtual = Number(conta.valor || 0);
     const valorPagoInformado = normalizarDecimal(req.body?.valor_pago || 0);
     const valorPago = valorPagoInformado > 0 ? valorPagoInformado : valorAtual;
 
@@ -1035,10 +1038,12 @@ router.post('/contas-receber/estornar-parcial/:lancamentoId', auth, writeRateLim
       return jsonErro(res, 403, 'Sem acesso');
     }
 
-    const valorEstorno = normalizarDecimal(lancamento.valor || 0);
-    const valorAtualConta = normalizarDecimal(conta.valor || 0);
+    // Valores vindos do banco (NUMERIC vem como string "480.00"): usar Number(),
+    // não normalizarDecimal (que trataria o ponto como separador de milhar BR).
+    const valorEstorno = Number(lancamento.valor || 0);
+    const valorAtualConta = Number(conta.valor || 0);
     const novoValorConta = Number((valorAtualConta + valorEstorno).toFixed(2));
-    const valorOriginalConta = normalizarDecimal(conta.valor_original || 0);
+    const valorOriginalConta = Number(conta.valor_original || 0);
     const estaVencido = conta.data_vencimento && String(conta.data_vencimento).slice(0, 10) < hoje();
 
     const novoStatus =
