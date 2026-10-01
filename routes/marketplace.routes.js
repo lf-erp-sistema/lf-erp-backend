@@ -240,7 +240,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
     }
 
     // 5. Preparar dados da venda
-    const totalVenda   = normalizarDecimal(order.total_amount);
+    const totalVenda   = Number(order.total_amount || 0);
     const dataVenda    = normalizarDataISO((order.date_created || '').substring(0, 10)) || hoje();
     const observacao   = `Pedido ML #${orderId}`;
     const pagamentoStr = 'Mercado Livre';
@@ -294,8 +294,9 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
 
         const produto     = prodResult.rows[0];
         const qtd         = item.quantidade;
-        const precoUnit   = normalizarDecimal(item.preco_unitario || produto.preco);
-        const custoUnit   = normalizarDecimal(produto.custo || 0);
+        // Dados da API do ML (number) e do banco (NUMERIC string): usar Number(), não normalizarDecimal.
+        const precoUnit   = Number(item.preco_unitario || produto.preco || 0);
+        const custoUnit   = Number(produto.custo || 0);
         const totalItem   = Number((qtd * precoUnit).toFixed(2));
 
         await client.query(

@@ -333,7 +333,7 @@ module.exports = function ({ pool, writeRateLimiter, normalizarDecimal, normaliz
           await client.query('ROLLBACK');
           return erro(res, 400, `Produto "${produto.nome}" é um kit e não é suportado pela API pública. Use o fluxo de venda interno.`);
         }
-        const preco = normalizarDecimal(produto.preco);
+        const preco = Number(produto.preco || 0); // valor do banco (NUMERIC string) → Number, não normalizarDecimal
         if (preco <= 0) {
           await client.query('ROLLBACK');
           return erro(res, 400, `Produto "${produto.nome}" não possui preço cadastrado`);

@@ -547,7 +547,8 @@ module.exports = ({
 
       let contaReceberID = null;
       if (gerar_conta_receber && os.cliente_id && criarParcelasContasReceber) {
-        const vlr = normalizarDecimal(valor_pago) || normalizarDecimal(os.valor_total) || 0;
+        // valor_pago é input do usuário (normalizarDecimal); os.valor_total vem do banco (Number).
+        const vlr = normalizarDecimal(valor_pago) || Number(os.valor_total || 0) || 0;
         if (vlr > 0) {
           const contas = await criarParcelasContasReceber(client, {
             empresaId: er.id, empresa: er.nome,

@@ -257,9 +257,11 @@ module.exports = ({
           );
         }
 
-        const precoRef = normalizarDecimal(
-          await resolverPreco({ pool: client, produtoId, gradeId, clienteId, empresaId: empresaResolvida.id, quantidade })
-          || grade.preco || produto.preco
+        // Valores do banco/computados (resolverPreco retorna número, grade/produto.preco são NUMERIC):
+        // usar Number(), não normalizarDecimal (que corromperia string "10.00" do pg).
+        const precoRef = Number(
+          (await resolverPreco({ pool: client, produtoId, gradeId, clienteId, empresaId: empresaResolvida.id, quantidade }))
+          || grade.preco || produto.preco || 0
         );
         const precoEnviado = item.preco_unitario != null ? normalizarDecimal(item.preco_unitario) : null;
         if (precoEnviado !== null && precoEnviado < 0) {
@@ -272,7 +274,8 @@ module.exports = ({
         if (precoUnitario <= 0) {
           throw new Error(`Produto "${produto.nome}" não possui preço cadastrado.`);
         }
-        const custoUnitario = normalizarDecimal(item.custo_unitario || grade.custo || produto.custo);
+        // custo vem de dados do produto/grade (banco), não é campo digitado em formato BR
+        const custoUnitario = Number(item.custo_unitario || grade.custo || produto.custo || 0);
         const totalItem = Number((quantidade * precoUnitario).toFixed(2));
         somaItens += totalItem;
 
@@ -309,9 +312,9 @@ module.exports = ({
       } else if (produto.e_kit) {
         await validarEstoqueKit(client, produtoId, empresaResolvida.id, quantidade);
 
-        const precoRef = normalizarDecimal(
-          await resolverPreco({ pool: client, produtoId, gradeId: null, clienteId, empresaId: empresaResolvida.id, quantidade })
-          || produto.preco
+        const precoRef = Number(
+          (await resolverPreco({ pool: client, produtoId, gradeId: null, clienteId, empresaId: empresaResolvida.id, quantidade }))
+          || produto.preco || 0
         );
         const precoEnviado = item.preco_unitario != null ? normalizarDecimal(item.preco_unitario) : null;
         if (precoEnviado !== null && precoEnviado < 0) {
@@ -323,7 +326,7 @@ module.exports = ({
         if (precoUnitario <= 0) {
           throw new Error(`Produto "${produto.nome}" não possui preço cadastrado.`);
         }
-        const custoUnitario = normalizarDecimal(item.custo_unitario || produto.custo);
+        const custoUnitario = Number(item.custo_unitario || produto.custo || 0);
         const totalItem = Number((quantidade * precoUnitario).toFixed(2));
         somaItens += totalItem;
 
@@ -345,9 +348,9 @@ module.exports = ({
 
       // ── Produto simples (sem grade, sem kit) ───────────────────────
       } else {
-        const precoRef = normalizarDecimal(
-          await resolverPreco({ pool: client, produtoId, gradeId: null, clienteId, empresaId: empresaResolvida.id, quantidade })
-          || produto.preco
+        const precoRef = Number(
+          (await resolverPreco({ pool: client, produtoId, gradeId: null, clienteId, empresaId: empresaResolvida.id, quantidade }))
+          || produto.preco || 0
         );
         const precoEnviado = item.preco_unitario != null ? normalizarDecimal(item.preco_unitario) : null;
         if (precoEnviado !== null && precoEnviado < 0) {
@@ -359,7 +362,7 @@ module.exports = ({
         if (precoUnitario <= 0) {
           throw new Error(`Produto "${produto.nome}" não possui preço cadastrado.`);
         }
-        const custoUnitario = normalizarDecimal(item.custo_unitario || produto.custo);
+        const custoUnitario = Number(item.custo_unitario || produto.custo || 0);
         const totalItem = Number((quantidade * precoUnitario).toFixed(2));
         somaItens += totalItem;
 

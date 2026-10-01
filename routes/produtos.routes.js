@@ -540,15 +540,21 @@ ${adicionarFiltroEmpresaSaaS({
         const atual = atualResult.rows[0];
 
         const precoFinal = normalizarDecimal(preco);
-        const custoBase = normalizarDecimal(custo_unitario ?? custo ?? atual.custo ?? 0);
+        // Input do usuário (custo_unitario/custo) usa normalizarDecimal (formato BR);
+        // fallback atual.custo vem do banco (NUMERIC string) e usa Number().
+        const custoBase = (custo_unitario != null)
+          ? normalizarDecimal(custo_unitario)
+          : (custo != null)
+            ? normalizarDecimal(custo)
+            : Number(atual.custo || 0);
         // custo_medio: se enviado explicitamente, usa o valor enviado.
         // Se custo foi alterado, reseta custo_medio para custoBase (evita herdar valor corrompido).
-        // Só preserva atual.custo_medio se custo NÃO foi enviado.
+        // Só preserva atual.custo_medio (valor do banco → Number) se custo NÃO foi enviado.
         const custoMedioFinal = (custo_medio != null && custo_medio !== '')
           ? normalizarDecimal(custo_medio)
           : (custo != null || custo_unitario != null)
             ? custoBase
-            : normalizarDecimal(atual.custo_medio || custoBase);
+            : Number(atual.custo_medio || custoBase);
         const lucroUnitario = Number((precoFinal - custoMedioFinal).toFixed(2));
         const margemLucro =
           precoFinal > 0 ? Number(((lucroUnitario / precoFinal) * 100).toFixed(2)) : 0;
@@ -603,7 +609,7 @@ ${adicionarFiltroEmpresaSaaS({
             custoMedioFinal,
             lucroUnitario,
             margemLucro,
-            preco_promocional !== undefined ? normalizarDecimal(preco_promocional) : normalizarDecimal(atual.preco_promocional),
+            preco_promocional !== undefined ? normalizarDecimal(preco_promocional) : (atual.preco_promocional != null ? Number(atual.preco_promocional) : null),
             promocao_ativa !== undefined ? Boolean(promocao_ativa) : Boolean(atual.promocao_ativa),
             estoqueNovo,
             estoque_minimo !== undefined ? normalizarInt(estoque_minimo) : normalizarInt(atual.estoque_minimo),

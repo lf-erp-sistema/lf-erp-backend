@@ -160,11 +160,11 @@ module.exports = function ({
 
         const estoqueAtual  = normalizarInt(produto.estoque);
         const novoEstoque   = estoqueAtual + quantidade;
-        const custoAtual    = normalizarDecimal(produto.custo_medio || produto.custo || 0);
+        const custoAtual    = Number(produto.custo_medio || produto.custo || 0);
         const novoCustoMedio = novoEstoque > 0
           ? Number(((estoqueAtual * custoAtual + quantidade * custoUnitario) / novoEstoque).toFixed(2))
           : custoUnitario;
-        const precoProduto   = normalizarDecimal(produto.preco || 0);
+        const precoProduto   = Number(produto.preco || 0);
         const lucroUnitario  = Number((precoProduto - novoCustoMedio).toFixed(2));
         const margemLucroRaw = precoProduto > 0
           ? Number(((lucroUnitario / precoProduto) * 100).toFixed(2)) : 0;
@@ -396,9 +396,9 @@ module.exports = function ({
           const prod = prodsOriginaisMap[Number(item.produto_id)];
           if (!prod) continue;
           const estoqueAtual  = normalizarInt(prod.estoque);
-          const custoAtual    = normalizarDecimal(prod.custo_medio || prod.custo || 0);
+          const custoAtual    = Number(prod.custo_medio || prod.custo || 0);
           const qtdOriginal   = normalizarInt(item.quantidade);
-          const custoOriginal = normalizarDecimal(item.custo_unitario);
+          const custoOriginal = Number(item.custo_unitario || 0);
           if (estoqueAtual !== null && qtdOriginal !== null && estoqueAtual < qtdOriginal) {
             await client.query('ROLLBACK');
             return erro(res, 400, `Produto ${item.produto_id}: ${qtdOriginal - estoqueAtual} unidade(s) desta compra já foram utilizadas. Reverta as movimentações antes de editar.`);
@@ -496,11 +496,11 @@ module.exports = function ({
 
         const estoqueAtual  = normalizarInt(produto.estoque);
         const novoEstoque   = estoqueAtual + quantidade;
-        const custoAtual    = normalizarDecimal(produto.custo_medio || produto.custo || 0);
+        const custoAtual    = Number(produto.custo_medio || produto.custo || 0);
         const novoCustoMedio = novoEstoque > 0
           ? Number(((estoqueAtual * custoAtual + quantidade * custoUnitario) / novoEstoque).toFixed(2))
           : custoUnitario;
-        const precoProduto  = normalizarDecimal(produto.preco || 0);
+        const precoProduto  = Number(produto.preco || 0);
         const lucroUnitario  = Number((precoProduto - novoCustoMedio).toFixed(2));
         const margemLucroRaw = precoProduto > 0 ? Number(((lucroUnitario / precoProduto) * 100).toFixed(2)) : 0;
         const margemLucro    = Math.min(Math.max(margemLucroRaw, -9999), 9999);
