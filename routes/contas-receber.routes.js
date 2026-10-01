@@ -757,45 +757,53 @@ VALUES (
 
     try { await atualizarStatusContasReceberPorEmpresa(empresaResolvida.nome, empresaResolvida.id); } catch (e) { console.error('[cr-pagar] status-cr:', e.message); }
 
-    const contaAtualizadaResult = await pool.query(
-      `
-      SELECT
-        *,
-        CASE
-          WHEN LOWER(COALESCE(status, 'pendente')) = 'pago' THEN 'pago'
-         WHEN LOWER(COALESCE(status, 'pendente')) = 'parcial'
-  AND data_vencimento IS NOT NULL
-  AND data_vencimento < $2
-THEN 'parcial_atrasado'
-WHEN LOWER(COALESCE(status, 'pendente')) = 'parcial' THEN 'parcial'
-WHEN data_vencimento IS NOT NULL AND data_vencimento < $2 THEN 'atrasado'
-          ELSE 'pendente'
-        END AS status_exibicao
-      FROM contas_receber
-      WHERE id = $1 AND (empresa_id = $3 OR (empresa_id IS NULL AND empresa = $4))
-      `,
-      [id, hoje(), empresaResolvida.id, empresaResolvida.nome]
-    );
-
-    const contaAtualizada = contaAtualizadaResult.rows[0];
+    // Re-fetch resiliente: o pagamento JÁ foi commitado. Se o SELECT falhar,
+    // ainda retornamos sucesso com os dados que já temos em memória.
+    let contaAtualizada = null;
+    try {
+      const contaAtualizadaResult = await pool.query(
+        `
+        SELECT
+          *,
+          CASE
+            WHEN LOWER(COALESCE(status, 'pendente')) = 'pago' THEN 'pago'
+           WHEN LOWER(COALESCE(status, 'pendente')) = 'parcial'
+    AND data_vencimento IS NOT NULL
+    AND data_vencimento < $2::text
+  THEN 'parcial_atrasado'
+  WHEN LOWER(COALESCE(status, 'pendente')) = 'parcial' THEN 'parcial'
+  WHEN data_vencimento IS NOT NULL AND data_vencimento < $2::text THEN 'atrasado'
+            ELSE 'pendente'
+          END AS status_exibicao
+        FROM contas_receber
+        WHERE id = $1 AND (empresa_id = $3 OR (empresa_id IS NULL AND empresa = $4))
+        `,
+        [id, hoje(), empresaResolvida.id, empresaResolvida.nome]
+      );
+      contaAtualizada = contaAtualizadaResult.rows[0] || null;
+    } catch (refetchErr) {
+      console.error('[cr-pagar] re-fetch falhou (pagamento já commitado):', refetchErr.message);
+    }
 
     res.json({
       sucesso: true,
       mensagem: pagamentoTotal
         ? 'Conta baixada com sucesso'
         : 'Baixa parcial registrada com sucesso',
-      conta: {
-        ...contaAtualizada,
-        valor: Number(contaAtualizada.valor || 0),
-        parcela: Number(contaAtualizada.parcela || 1),
-        total_parcelas: Number(contaAtualizada.total_parcelas || 1),
-        status: contaAtualizada.status_exibicao
-      }
+      conta: contaAtualizada
+        ? {
+            ...contaAtualizada,
+            valor: Number(contaAtualizada.valor || 0),
+            parcela: Number(contaAtualizada.parcela || 1),
+            total_parcelas: Number(contaAtualizada.total_parcelas || 1),
+            status: contaAtualizada.status_exibicao
+          }
+        : { id, valor: novoValor, status: novoStatus }
     });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
-    console.error('[cr-pagar] ERRO id=%d: %s | %s', id, error.message, error.stack?.split('\n')[1]?.trim() || '');
-    jsonErro(res, 500, 'Erro ao baixar conta');
+    console.error('[cr-pagar] ERRO id=%d: %s\n%s', id, error.message, error.stack || '');
+    jsonErro(res, 500, `Erro ao baixar conta: ${error.message}`);
   } finally {
     client.release();
   }
