@@ -5,7 +5,14 @@ const bcrypt = require('bcrypt');
 function createInitDb(pool, { hoje, addDias, atualizarStatusContasReceberPorEmpresa, atualizarStatusContasPagarPorEmpresa }) {
   return async function initDb() {
     // Fast-path: banco já inicializado → pula as ~168 queries DDL (cold start 8–15s → <1s)
-    // Novas colunas/tabelas devem ir em backend/migrations/, não aqui
+    //
+    // ⚠️ ATENÇÃO: todo o DDL abaixo (CREATE/ALTER TABLE) só roda em banco VAZIO.
+    // Em produção, com a tabela `empresas` já existente, este bloco NUNCA executa.
+    // Portanto NUNCA adicione colunas/tabelas novas aqui — elas não chegarão em
+    // produção. Toda mudança de schema deve ir em backend/migrations/ (numerada),
+    // que é o único caminho que roda sobre o banco existente.
+    // (Ex. de bug causado por ignorar isto: `valor_original` foi adicionado aqui e
+    //  nunca existiu em produção, quebrando a baixa de contas a receber.)
     const { rows: _chk } = await pool.query(
       "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='empresas' LIMIT 1"
     );
