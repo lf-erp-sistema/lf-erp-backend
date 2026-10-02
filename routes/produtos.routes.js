@@ -335,9 +335,18 @@ module.exports = ({
       const params = [];
 
       let sql = `
-  SELECT *,
-        CASE WHEN estoque <= estoque_minimo AND estoque_minimo > 0 THEN TRUE ELSE FALSE END AS alerta_estoque
+  SELECT produtos.*,
+        CASE WHEN estoque <= estoque_minimo AND estoque_minimo > 0 THEN TRUE ELSE FALSE END AS alerta_estoque,
+        img.url_thumbnail AS imagem_thumb
   FROM produtos
+  LEFT JOIN LATERAL (
+    SELECT url_thumbnail
+    FROM produto_imagens
+    WHERE produto_imagens.produto_id = produtos.id
+      AND produto_imagens.empresa_id = produtos.empresa_id
+    ORDER BY principal DESC, ordem ASC, id ASC
+    LIMIT 1
+  ) img ON true
   WHERE deletado_em IS NULL
 ${adicionarFiltroEmpresaSaaS({
   params,
