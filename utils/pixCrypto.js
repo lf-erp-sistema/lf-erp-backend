@@ -4,7 +4,11 @@ const ALGORITHM = 'aes-256-gcm';
 const PREFIX = 'enc:v1:';
 
 if (!process.env.PIX_ENCRYPTION_KEY) {
-  console.warn('[pixCrypto] PIX_ENCRYPTION_KEY ausente — dados PIX em texto puro. Configure a variável em produção.');
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[pixCrypto] PIX_ENCRYPTION_KEY ausente em produção — abortando para evitar armazenar credenciais PIX em texto puro.');
+    process.exit(1);
+  }
+  console.warn('[pixCrypto] PIX_ENCRYPTION_KEY ausente — dados PIX em texto puro (ok fora de produção). Configure a variável antes de ir para produção.');
 }
 
 function getKey() {
