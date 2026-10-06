@@ -293,15 +293,17 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, normalizarDecimal
         pool.query(`SELECT COALESCE(SUM(valor),0) AS total FROM lancamentos_financeiros ${rwhere}`, rparam)
       ]);
 
-      const receitaBruta   = normalizarDecimal(vr.rows[0].total);
-      const descontoVendas = normalizarDecimal(vr.rows[0].desconto);
+      // valores vêm de SUM()/COALESCE do Postgres (string decimal) — nunca normalizarDecimal()
+      // aqui, que trata "." como separador de milhar BR e corromperia o valor (ver auditoria FIN-01)
+      const receitaBruta   = Number(vr.rows[0].total);
+      const descontoVendas = Number(vr.rows[0].desconto);
       const receitaLiquida = receitaBruta - descontoVendas;
-      const cmv            = normalizarDecimal(cmvr.rows[0].cmv);
+      const cmv            = Number(cmvr.rows[0].cmv);
       const lucroBruto     = receitaLiquida - cmv;
-      const despesasLanc   = normalizarDecimal(dr.rows[0].total);
-      const despesasCP     = normalizarDecimal(cpr.rows[0].total);
+      const despesasLanc   = Number(dr.rows[0].total);
+      const despesasCP     = Number(cpr.rows[0].total);
       const totalDespesas  = despesasLanc + despesasCP;
-      const receitaExtra   = normalizarDecimal(rr.rows[0].total);
+      const receitaExtra   = Number(rr.rows[0].total);
       const resultadoOp    = lucroBruto - totalDespesas + receitaExtra;
 
       const periodo = `${dataBR(dataInicial || hoje())} a ${dataBR(dataFinal || hoje())}`;
@@ -497,10 +499,12 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, normalizarDecimal
         )
       ]);
 
-      const totalVendas    = normalizarDecimal(vendas.rows[0].total);
-      const totalCompras   = normalizarDecimal(compras.rows[0].total);
-      const totalDespesas  = normalizarDecimal(despesas.rows[0].total);
-      const totalReceitas  = normalizarDecimal(receitasExtra.rows[0].total);
+      // valores vêm de SUM()/COALESCE do Postgres (string decimal) — nunca normalizarDecimal()
+      // aqui, que trata "." como separador de milhar BR e corromperia o valor (ver auditoria FIN-01)
+      const totalVendas    = Number(vendas.rows[0].total);
+      const totalCompras   = Number(compras.rows[0].total);
+      const totalDespesas  = Number(despesas.rows[0].total);
+      const totalReceitas  = Number(receitasExtra.rows[0].total);
       const resultado      = totalVendas + totalReceitas - totalCompras - totalDespesas;
 
       return res.json({
@@ -509,8 +513,8 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, normalizarDecimal
           periodo:      { inicio: mesInicio, fim: mesFim },
           vendas:       { total: totalVendas,   qtd: Number(vendas.rows[0].qtd) },
           compras:      { total: totalCompras,  qtd: Number(compras.rows[0].qtd) },
-          cr_pendente:  normalizarDecimal(crPendente.rows[0].total),
-          cp_pendente:  normalizarDecimal(cpPendente.rows[0].total),
+          cr_pendente:  Number(crPendente.rows[0].total),
+          cp_pendente:  Number(cpPendente.rows[0].total),
           despesas:     totalDespesas,
           receitas_extra: totalReceitas,
           resultado,
