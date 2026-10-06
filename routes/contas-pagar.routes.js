@@ -460,6 +460,19 @@ router.post('/contas-pagar/manual', auth, writeRateLimiter, requirePermissao(poo
 
     try { await atualizarStatusContasPagarPorEmpresa(empresaResolvida.nome, empresaResolvida.id); } catch {}
 
+    try {
+      await registrarLogFinanceiro({
+        empresa: empresaResolvida.nome,
+        empresa_id: empresaResolvida.id,
+        tipo: 'criacao',
+        entidade: 'contas_pagar',
+        entidade_id: criadas[0],
+        descricao: `Criação manual de conta a pagar "${desc}" — ${criadas.length} título(s) (ids ${criadas.join(', ')})`,
+        valor: valorNum,
+        usuario_id: req.user?.id
+      });
+    } catch (logErr) { console.error('[cp-manual] log financeiro:', logErr.message); }
+
     res.json({ sucesso: true, ids: criadas, mensagem: `${criadas.length} título(s) criado(s)` });
   } catch (err) {
     await client.query('ROLLBACK');

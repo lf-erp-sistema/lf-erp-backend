@@ -1242,22 +1242,27 @@ router.put('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool,
 
     const sets = [];
     const params = [];
+    const camposAlterados = [];
 
     if (observacao !== undefined) {
       params.push(String(observacao).trim());
       sets.push(`observacao = $${params.length}`);
+      camposAlterados.push('observação');
     }
     if (data_vencimento !== undefined) {
       const dataISO = normalizarDataISO(data_vencimento);
       if (!dataISO) return jsonErro(res, 400, 'Data inválida');
       params.push(dataISO);
       sets.push(`data_vencimento = $${params.length}`);
+      camposAlterados.push('vencimento');
     }
+    let valorFinal;
     if (valor !== undefined) {
-      const valorFinal = normalizarDecimal(valor);
+      valorFinal = normalizarDecimal(valor);
       if (valorFinal <= 0) return jsonErro(res, 400, 'Valor inválido');
       params.push(valorFinal);
       sets.push(`valor = $${params.length}`);
+      camposAlterados.push('valor');
     }
 
     if (!sets.length) return jsonErro(res, 400, 'Nenhum campo para atualizar');
@@ -1293,6 +1298,19 @@ router.put('/contas-receber/:id', auth, writeRateLimiter, requirePermissao(pool,
         [...params, ...extraParams]
       );
     }
+
+    try {
+      await registrarLogFinanceiro({
+        empresa: empresaResolvida.nome,
+        empresa_id: empresaResolvida.id,
+        tipo: 'edicao',
+        entidade: 'contas_receber',
+        entidade_id: id,
+        descricao: `Edição da conta a receber #${id} (${camposAlterados.join(', ')})${usarBulk ? ` — escopo: ${escopoValido}` : ''}`,
+        valor: valorFinal !== undefined ? valorFinal : (conta.valor_atualizado || conta.valor || 0),
+        usuario_id: req.user?.id
+      });
+    } catch (logErr) { console.error('[cr-editar] log financeiro:', logErr.message); }
 
     return res.json({ ok: true });
   } catch (err) {
