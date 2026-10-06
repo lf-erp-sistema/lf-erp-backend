@@ -130,6 +130,18 @@ module.exports = function usuariosRoutes({
         clienteTx.release();
       }
 
+      await registrarAuditoria({
+        empresa: empresaResolvida.nome,
+        empresa_id: empresaResolvida.id,
+        usuario_id: req.user.id,
+        usuario_nome: req.user.nome || '',
+        modulo: 'usuarios',
+        acao: 'cadastro',
+        referencia_id: novoUsuario.id,
+        dados_novos: { nome: nome.trim(), usuario: usuario.trim(), tipo },
+        req
+      });
+
       res.json(novoUsuario);
     } catch (error) {
       console.error('Erro ao criar usuário:', error);
@@ -180,7 +192,9 @@ module.exports = function usuariosRoutes({
         return jsonErro(res, 400, 'Já existe outro usuário com esse login');
       }
 
-      if (senha && senha.trim()) {
+      const senhaAlterada = !!(senha && senha.trim());
+
+      if (senhaAlterada) {
         const forcaSenha = validarForcaSenha(senha.trim());
         if (!forcaSenha.valido) return jsonErro(res, 400, forcaSenha.mensagem);
 
@@ -212,6 +226,24 @@ module.exports = function usuariosRoutes({
         );
       }
 
+      const usuarioAnterior = atualResult.rows[0];
+      await registrarAuditoria({
+        empresa: empresaResolvida.nome,
+        empresa_id: empresaResolvida.id,
+        usuario_id: req.user.id,
+        usuario_nome: req.user.nome || '',
+        modulo: 'usuarios',
+        acao: 'edicao',
+        referencia_id: id,
+        dados_anteriores: {
+          nome: usuarioAnterior.nome_completo,
+          usuario: usuarioAnterior.usuario,
+          tipo: usuarioAnterior.tipo
+        },
+        dados_novos: { nome: nome.trim(), usuario: usuario.trim(), tipo, senha_alterada: senhaAlterada },
+        req
+      });
+
       res.json({ sucesso: true });
     } catch (error) {
       console.error('Erro ao atualizar usuário:', error);
@@ -239,7 +271,7 @@ module.exports = function usuariosRoutes({
       }
 
       const existe = await pool.query(
-        `SELECT id FROM usuarios WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
+        `SELECT id, nome_completo, usuario, tipo FROM usuarios WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
         [id, empresaResolvida.id, empresaResolvida.nome]
       );
 
@@ -247,10 +279,28 @@ module.exports = function usuariosRoutes({
         return jsonErro(res, 404, 'Usuário não encontrado');
       }
 
+      const usuarioExcluido = existe.rows[0];
+
       await pool.query(
         `DELETE FROM usuarios WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
         [id, empresaResolvida.id, empresaResolvida.nome]
       );
+
+      await registrarAuditoria({
+        empresa: empresaResolvida.nome,
+        empresa_id: empresaResolvida.id,
+        usuario_id: req.user.id,
+        usuario_nome: req.user.nome || '',
+        modulo: 'usuarios',
+        acao: 'exclusao',
+        referencia_id: id,
+        dados_anteriores: {
+          nome: usuarioExcluido.nome_completo,
+          usuario: usuarioExcluido.usuario,
+          tipo: usuarioExcluido.tipo
+        },
+        req
+      });
 
       res.json({ sucesso: true });
     } catch (error) {
@@ -335,6 +385,15 @@ module.exports = function usuariosRoutes({
       const MODULOS = ['produtos','clientes','fornecedores','compras','vendas','estoque',
                        'financeiro','relatorios','dre','lucratividade','usuarios','configuracoes'];
 
+      const permissoesAnterioresResult = await pool.query(
+        `SELECT modulo, pode_ver, pode_criar, pode_editar, pode_deletar
+         FROM permissoes_usuario WHERE usuario_id = $1 AND empresa_id = $2`,
+        [id, empresaResolvida.id]
+      );
+      const permissoesAnteriores = Object.fromEntries(
+        permissoesAnterioresResult.rows.map((r) => [r.modulo, r])
+      );
+
       for (const modulo of MODULOS) {
         if (!permissoes[modulo]) continue;
         const p = permissoes[modulo];
@@ -354,6 +413,19 @@ module.exports = function usuariosRoutes({
           );
         }
       }
+
+      await registrarAuditoria({
+        empresa: empresaResolvida.nome,
+        empresa_id: empresaResolvida.id,
+        usuario_id: req.user.id,
+        usuario_nome: req.user.nome || '',
+        modulo: 'usuarios',
+        acao: 'alteracao_permissoes',
+        referencia_id: id,
+        dados_anteriores: permissoesAnteriores,
+        dados_novos: permissoes,
+        req
+      });
 
       res.json({ sucesso: true });
     } catch (err) {
