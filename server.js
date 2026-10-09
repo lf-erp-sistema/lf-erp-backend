@@ -33,7 +33,7 @@ const {
   _tokenHash,
   _sseNonces,
   loadBlacklistFromDb,
-  auth,
+  auth: authJwt,
   apenasAdmin,
   createAuthHelpers,
   validarForcaSenha
@@ -189,6 +189,33 @@ const {
 
 const { obterPlanoEmpresa, validarLimitePlano, validarLimiteVendasMes } =
   createPlanoUtils(pool, { hoje });
+
+// ── auth + revalidação de bloqueio/trial (achado SEC-07, auditoria 360 2026-10-06) ──
+// authJwt (middleware/auth.js) só valida assinatura/expiração do JWT -- um token
+// válido por até 12h continuava permitindo uso normal mesmo que a empresa fosse
+// bloqueada ou o trial expirasse DURANTE a sessão (só era revalidado em /login,
+// /auth/refresh e /empresa/status). Reusa o cache de 60s já existente em
+// obterPlanoEmpresa (utils/plano.js) -- mesma query, sem custo extra de performance.
+async function auth(req, res, next) {
+  authJwt(req, res, async () => {
+    try {
+      if (req.user?.is_saas_owner) return next();
+
+      const plano = await obterPlanoEmpresa(req.empresa_id, req.empresa_nome);
+
+      if (plano?.bloqueada) {
+        return res.status(403).json({ sucesso: false, erro: 'Empresa bloqueada. Entre em contato com o suporte.', codigo: 'EMPRESA_BLOQUEADA' });
+      }
+      if (plano?.assinatura_status === 'trial' && plano.trial_fim && String(plano.trial_fim).slice(0, 10) < hoje()) {
+        return res.status(403).json({ sucesso: false, erro: 'Período de teste expirado. Escolha um plano para continuar.', codigo: 'TRIAL_EXPIRADO' });
+      }
+      next();
+    } catch (e) {
+      console.error('[auth] erro ao revalidar bloqueio/trial:', e.message);
+      next(); // fail-open em falha de infra -- não derruba o sistema por erro de query
+    }
+  });
+}
 
 const {
   obterConfigEmpresa,
