@@ -13,6 +13,7 @@
  */
 
 const { requirePermissao } = require('../utils/permissoes');
+const { addDias } = require('../utils/normalizadores');
 const { erro, ok } = require('../utils/routeHelpers');
 
 module.exports = ({
@@ -591,9 +592,7 @@ module.exports = ({
 
       const { dias_garantia = 90, data_inicio, condicoes, observacoes } = req.body;
       const inicio = normalizarDataISO(data_inicio) || hoje();
-      const fim    = new Date(inicio);
-      fim.setDate(fim.getDate() + Number(dias_garantia));
-      const fimISO = fim.toISOString().slice(0, 10);
+      const fimISO = addDias(inicio, Number(dias_garantia));
 
       await pool.query(
         `INSERT INTO at_garantias (os_id, empresa_id, dias_garantia, data_inicio, data_fim, condicoes, observacoes)
@@ -792,8 +791,8 @@ module.exports = ({
       if (!er) return erro(res, 403, 'Sem acesso');
 
       const { data_inicial, data_final } = req.query;
-      const di = data_inicial || new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10);
-      const df = data_final   || new Date().toISOString().slice(0, 10);
+      const di = data_inicial || addDias(hoje(), -30);
+      const df = data_final   || hoje();
 
       const filtro = `(os.empresa_id=$1 OR (os.empresa_id IS NULL AND os.empresa=$2)) AND os.data_entrada::date BETWEEN $3 AND $4`;
 
