@@ -17,6 +17,7 @@
 
 const { enviarMensagem, aplicarTemplate } = require('../utils/whatsapp');
 const { erro, ok } = require('../utils/routeHelpers');
+const { validarHostExterno } = require('../utils/ssrfGuard');
 
 const EVENTOS = [
   { key: 'cobranca.atrasada',  label: 'Cobrança atrasada',         variaveis: ['nome', 'valor', 'dias', 'empresa'] },
@@ -43,8 +44,6 @@ const TEMPLATES_PADRAO = {
     '🔔 Boleto gerado!\n\nOlá {{nome}}, seu boleto de *{{valor}}* vence em *{{vencimento}}*.\n\nLink para pagamento: {{link}}\n\n*{{empresa}}*',
   'manual': 'Olá {{nome}}, mensagem de *{{empresa}}*.'
 };
-
-const SSRF_BLOCKED = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0|::1|metadata\.google\.internal)/i;
 
 module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, hoje, requirePermissao }) {
   const router = require('express').Router();
@@ -91,7 +90,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
       if (wpp_api_url) {
         try {
           const parsedUrl = new URL(wpp_api_url);
-          if (SSRF_BLOCKED.test(parsedUrl.hostname)) {
+          if (!(await validarHostExterno(parsedUrl.hostname))) {
             return erro(res, 400, 'URL de API não permitida');
           }
         } catch {

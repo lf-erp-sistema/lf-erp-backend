@@ -5,17 +5,7 @@
  */
 
 const crypto = require('crypto');
-
-// IPs e ranges privados que não podem ser alvo de webhook (previne SSRF)
-const PRIVATE_IP_REGEX = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|0\.0\.0\.0|169\.254\.)/i;
-
-function validarUrlWebhook(urlStr) {
-  let url;
-  try { url = new URL(urlStr); } catch { return false; }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
-  if (PRIVATE_IP_REGEX.test(url.hostname)) return false;
-  return true;
-}
+const { validarUrlExterna: validarUrlWebhook } = require('./ssrfGuard');
 
 function timestampFortaleza() {
   // Gera ISO 8601 com offset -03:00 (America/Fortaleza, sem horário de verão)
@@ -38,7 +28,7 @@ async function dispararWebhook(pool, empresaId, evento, dados) {
   const { webhook_url, webhook_secret, eventos_ativos } = r.rows[0];
   if (Array.isArray(eventos_ativos) && !eventos_ativos.includes(evento)) return;
 
-  if (!validarUrlWebhook(webhook_url)) {
+  if (!(await validarUrlWebhook(webhook_url))) {
     console.warn(`[webhook-contabil] URL rejeitada (SSRF) empresa=${empresaId}`);
     return;
   }

@@ -15,8 +15,9 @@
  */
 
 const { obterPeriodo, adicionarFiltroPeriodo } = require('../utils/periodoUtils');
+const { validarUrlExterna } = require('../utils/ssrfGuard');
 
-module.exports = function ({ auth, pool, validarAcessoEmpresa, normalizarDecimal, hoje }) {
+module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normalizarDecimal, hoje }) {
   const router = require('express').Router();
   const { requirePermissao } = require('../utils/permissoes');
 
@@ -558,7 +559,7 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, normalizarDecimal
 
   // ── PUT /exportacao/integracao — salvar configuração ─────────────────────
 
-  router.put('/integracao', auth, requirePermissao(pool, 'configuracoes', 'editar'), async (req, res) => {
+  router.put('/integracao', auth, writeRateLimiter, requirePermissao(pool, 'configuracoes', 'editar'), async (req, res) => {
     try {
       const emp = await resolveEmpresa(req);
       if (!emp) return res.status(403).json({ sucesso: false, erro: 'Sem acesso' });
@@ -599,7 +600,7 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, normalizarDecimal
 
   // ── POST /exportacao/integracao/testar — dispara ping de teste ───────────
 
-  router.post('/integracao/testar', auth, requirePermissao(pool, 'configuracoes', 'editar'), async (req, res) => {
+  router.post('/integracao/testar', auth, writeRateLimiter, requirePermissao(pool, 'configuracoes', 'editar'), async (req, res) => {
     try {
       const emp = await resolveEmpresa(req);
       if (!emp) return res.status(403).json({ sucesso: false, erro: 'Sem acesso' });
@@ -624,12 +625,8 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, normalizarDecimal
       const headers = { 'Content-Type': 'application/json' };
       if (webhook_secret) headers['X-LF-Secret'] = webhook_secret;
 
-      try {
-        const _u = new URL(webhook_url);
-        if (!['http:', 'https:'].includes(_u.protocol)) throw new Error('Protocolo inválido');
-        if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/i.test(_u.hostname)) throw new Error('URL aponta para rede interna');
-      } catch (validErr) {
-        return res.json({ sucesso: false, erro: validErr.message || 'URL de webhook inválida' });
+      if (!(await validarUrlExterna(webhook_url))) {
+        return res.json({ sucesso: false, erro: 'URL de webhook inválida ou aponta para rede interna.' });
       }
 
       const resp = await fetch(webhook_url, {

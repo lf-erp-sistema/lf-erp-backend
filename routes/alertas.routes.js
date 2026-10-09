@@ -14,6 +14,7 @@
  */
 
 const nodemailer = require('nodemailer');
+const { validarHostExterno } = require('../utils/ssrfGuard');
 
 // Template simples: substitui {{variavel}} pelos valores
 function aplicarTemplate(template, vars) {
@@ -293,9 +294,8 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
 
       // ── Email ──────────────────────────────────────────────────────────────
       let transporter = null;
-      const SSRF_BLOCK = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|0\.|169\.254\.|::1|fc00:|fe80:|fd[0-9a-f]{2}:|localhost$)/i;
       if (cfg.email_ativo && cfg.smtp_host && cfg.smtp_user && cfg.smtp_pass) {
-        if (SSRF_BLOCK.test(String(cfg.smtp_host).trim().replace(/^\[|\]$/g, ''))) {
+        if (!(await validarHostExterno(String(cfg.smtp_host).trim()))) {
           console.warn('[alertas] smtp_host bloqueado (IP privado/localhost):', cfg.smtp_host);
         } else {
           try {
