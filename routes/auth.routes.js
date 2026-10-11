@@ -44,11 +44,19 @@ module.exports = function authRoutes({
           e.assinatura_status,
           e.bloqueada,
           e.trial_fim,
+          cfg.nome_empresa AS empresa_nome_exibicao,
           p.codigo AS plano_codigo,
           p.nome AS plano_nome
         FROM usuarios u
         LEFT JOIN empresas e ON e.id = u.empresa_id
         LEFT JOIN planos p ON p.id = e.plano_id
+        LEFT JOIN LATERAL (
+          SELECT nome_empresa
+          FROM configuracoes
+          WHERE empresa_id = e.id OR (empresa_id IS NULL AND empresa = e.nome)
+          ORDER BY empresa_id DESC NULLS LAST
+          LIMIT 1
+        ) cfg ON true
         WHERE LOWER(u.usuario) = LOWER($1)`,
         [usuario]
       );
@@ -132,6 +140,7 @@ module.exports = function authRoutes({
         empresa: {
           id: user.empresa_id_real || user.empresa_id || null,
           nome: user.empresa_nome_real || user.empresa || null,
+          nome_exibicao: user.empresa_nome_exibicao || null,
           plano: user.plano_codigo || null,
           plano_nome: user.plano_nome || null,
           assinatura_status: user.assinatura_status || null
@@ -144,6 +153,7 @@ module.exports = function authRoutes({
           perfil: user.tipo,
           tipo: user.tipo,
           empresa: user.empresa_nome_real || user.empresa || null,
+          empresa_nome_exibicao: user.empresa_nome_exibicao || null,
           empresa_id: user.empresa_id_real || user.empresa_id || null,
           is_saas_owner: Boolean(user.is_saas_owner)
         }
@@ -335,11 +345,19 @@ module.exports = function authRoutes({
           u.id, u.usuario, u.tipo, u.empresa, u.empresa_id,
           u.nome_completo, u.cpf, u.nascimento, u.is_saas_owner,
           e.nome AS empresa_nome_real,
+          cfg.nome_empresa AS empresa_nome_exibicao,
           e.assinatura_status, e.trial_fim, e.bloqueada,
           p.nome AS plano_nome, p.codigo AS plano_codigo
         FROM usuarios u
         LEFT JOIN empresas e ON e.id = u.empresa_id
         LEFT JOIN planos p ON p.id = e.plano_id
+        LEFT JOIN LATERAL (
+          SELECT nome_empresa
+          FROM configuracoes
+          WHERE empresa_id = e.id OR (empresa_id IS NULL AND empresa = e.nome)
+          ORDER BY empresa_id DESC NULLS LAST
+          LIMIT 1
+        ) cfg ON true
         WHERE u.id = $1
         `,
         [req.user.id]
@@ -367,6 +385,7 @@ module.exports = function authRoutes({
         perfil: user.tipo,
         tipo: user.tipo,
         empresa: user.empresa_nome_real || user.empresa || null,
+        empresa_nome_exibicao: user.empresa_nome_exibicao || null,
         empresa_id: user.empresa_id || null,
         cpf: user.cpf || '',
         nascimento: user.nascimento || '',
