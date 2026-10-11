@@ -286,15 +286,18 @@ module.exports = ({
       }
 
       const busca = (req.query.busca || '').trim().toLowerCase();
+      const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
       let sql = `
         SELECT c.id, c.empresa_id, c.nome, c.telefone, c.email, c.cpf, c.cpf_cnpj,
                c.endereco, c.nascimento, c.tabela_preco_id, c.criado_em, c.atualizado_em,
-               COALESCE(cr_saldo.total_em_aberto, 0) AS total_em_aberto
+               COALESCE(cr_saldo.total_em_aberto, 0) AS total_em_aberto,
+               COALESCE(cr_saldo.total_em_atraso, 0) AS total_em_atraso
         FROM clientes c
         LEFT JOIN (
           SELECT cliente_id,
-                 SUM(COALESCE(valor_atualizado, valor)) AS total_em_aberto
+                 SUM(COALESCE(valor_atualizado, valor)) AS total_em_aberto,
+                 SUM(CASE WHEN data_vencimento < $3 THEN COALESCE(valor_atualizado, valor) ELSE 0 END) AS total_em_atraso
           FROM contas_receber
           WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2))
             AND LOWER(COALESCE(status, 'pendente')) NOT IN ('pago')
@@ -304,8 +307,8 @@ module.exports = ({
         AND c.deletado_em IS NULL
       `;
 
-      const params = [empresaResolvida.id, empresaResolvida.nome];
-      let idx = 3;
+      const params = [empresaResolvida.id, empresaResolvida.nome, hoje];
+      let idx = 4;
 
       if (busca) {
         const buscaEsc = busca.replace(/[%_\\]/g, '\\$&');
