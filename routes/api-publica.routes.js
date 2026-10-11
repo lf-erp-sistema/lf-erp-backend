@@ -17,6 +17,7 @@
 const crypto = require('crypto');
 const { dispatchWebhook } = require('../utils/webhooks');
 const { erro } = require('../utils/routeHelpers');
+const { createSharedRateLimiter } = require('../utils/sharedRateLimiter');
 
 module.exports = function ({ pool, writeRateLimiter, normalizarDecimal, normalizarInt, hoje, registrarMovimentacaoEstoque }) {
   const router = require('express').Router();
@@ -34,21 +35,12 @@ module.exports = function ({ pool, writeRateLimiter, normalizarDecimal, normaliz
 
   // ── Rate limiter por empresa (100 req/min) ────────────────────────────────
 
-  const _apiRateBuckets = new Map();
-  function apiRateLimiter(req, res, next) {
-    const key = req.apiEmpresaId || req.ip;
-    const now = Date.now();
-    const bucket = _apiRateBuckets.get(key) || { count: 0, resetAt: now + 60_000 };
-    if (now > bucket.resetAt) { bucket.count = 0; bucket.resetAt = now + 60_000; }
-    bucket.count++;
-    _apiRateBuckets.set(key, bucket);
-    if (bucket.count > 100) return erro(res, 429, 'Limite de requisições atingido. Aguarde 1 minuto.');
-    next();
-  }
-  setInterval(() => {
-    const now = Date.now();
-    for (const [k, b] of _apiRateBuckets) { if (now > b.resetAt + 120_000) _apiRateBuckets.delete(k); }
-  }, 5 * 60_000).unref();
+  const apiRateLimiter = createSharedRateLimiter(pool).middleware({
+    key: (req) => `api-public:${req.apiEmpresaId || req.ip || req.connection?.remoteAddress || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 100,
+    message: 'Limite de requisições atingido. Aguarde 1 minuto.',
+  });
 
   // ── Middleware de autenticação via API Key ────────────────────────────────
 

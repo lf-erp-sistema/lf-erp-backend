@@ -24,6 +24,10 @@ function buildPool({ overrides = {} } = {}) {
   let idemCallIdx = 0;
 
   const query = jest.fn(async (sql) => {
+    // Shared public API rate limiter
+    if (sql.includes('INSERT INTO rate_limit_buckets')) {
+      return { rows: [{ request_count: 1, window_started_at: new Date().toISOString() }], rowCount: 1 };
+    }
     // authApiKey lookup
     if (sql.includes('empresa_api_keys') && sql.includes('SELECT')) {
       return overrides.apiKey ?? { rows: [{ empresa_id: EMPRESA_ID, empresa_nome: EMPRESA_NOME }] };
@@ -306,6 +310,7 @@ describe('POST /api/v1/vendas', () => {
     pool.query
       .mockResolvedValueOnce({ rows: [{ empresa_id: EMPRESA_ID, empresa_nome: EMPRESA_NOME }] }) // authApiKey SELECT
       .mockResolvedValueOnce({ rows: [] })                                                        // ultimo_uso UPDATE (fire-and-forget)
+      .mockResolvedValueOnce({ rows: [{ request_count: 1, window_started_at: new Date().toISOString() }] }) // rate limiter
       .mockRejectedValueOnce(new Error('connection error'));                                       // early check SELECT → rejeição real
 
     const res = await withAuth(request(app).post('/api/v1/vendas')).send(vendaBody());

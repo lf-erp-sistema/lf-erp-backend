@@ -25,7 +25,7 @@ const {
   validarItensVenda
 } = require('./utils/normalizadores');
 
-const { loginRateLimiter, writeRateLimiter } = require('./middleware/rateLimiter');
+const { createRateLimiters } = require('./middleware/rateLimiter');
 const {
   SECRET,
   JWT_EXPIRY_MS,
@@ -164,6 +164,8 @@ const pool = new Pool({
   statement_timeout: 30_000, // FIX 4: mata queries lentas antes de exaurir o pool
   query_timeout: 35_000      // FIX 4: timeout do driver (superior ao statement_timeout)
 });
+
+const { loginRateLimiter, writeRateLimiter } = createRateLimiters(pool);
 
 // Neon derruba conexÃµes idle â€” sem este handler o processo encerra com uncaughtException
 pool.on('error', (err) => {

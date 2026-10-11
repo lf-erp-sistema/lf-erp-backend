@@ -21,6 +21,7 @@ const { resolverClienteAsaas, criarBoleto } = require('../utils/asaas');
 const { decryptField } = require('../utils/pixCrypto');
 const { requirePermissao } = require('../utils/permissoes');
 const { erro, ok } = require('../utils/routeHelpers');
+const { createSharedRateLimiter } = require('../utils/sharedRateLimiter');
 
 module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normalizarDecimal, normalizarInt, hoje }) {
   const router = require('express').Router();
@@ -217,24 +218,12 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
 
   // ── Rate limiter por IP para a página pública de checkout (30 req/min) ────
   // Protege contra varredura/enumeração de tokens de pagamento
-  const _checkoutPublicoBuckets = new Map();
-  const CHECKOUT_MAP_MAX = 10000;
-  function checkoutPublicoRateLimiter(req, res, next) {
-    const key = req.ip || 'unknown';
-    const now = Date.now();
-    const bucket = _checkoutPublicoBuckets.get(key) || { count: 0, resetAt: now + 60_000 };
-    if (now > bucket.resetAt) { bucket.count = 0; bucket.resetAt = now + 60_000; }
-    bucket.count++;
-    _checkoutPublicoBuckets.set(key, bucket);
-    if (_checkoutPublicoBuckets.size > CHECKOUT_MAP_MAX) {
-      const agora = Date.now();
-      for (const [k, b] of _checkoutPublicoBuckets) {
-        if (agora > b.resetAt) _checkoutPublicoBuckets.delete(k);
-      }
-    }
-    if (bucket.count > 30) return erro(res, 429, 'Muitas requisições. Aguarde 1 minuto.');
-    next();
-  }
+  const checkoutPublicoRateLimiter = createSharedRateLimiter(pool).middleware({
+    key: (req) => `checkout-public:${req.ip || req.connection?.remoteAddress || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 30,
+    message: 'Muitas requisições. Aguarde 1 minuto.',
+  });
 
   // ── GET /checkout/p/:token — dados para a página pública ──────────────────
 
@@ -289,26 +278,38 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
   // ── POST /checkout/p/:token/boleto — gera boleto Asaas ───────────────────
 
   router.post('/p/:token/boleto', checkoutPublicoRateLimiter, async (req, res) => {
+    let client;
     try {
-      const result = await pool.query(
+      // Serializes generation per link and prevents duplicate Asaas charges.
+      client = await pool.connect();
+      await client.query('BEGIN');
+      const result = await client.query(
         `SELECT cl.*, e.nome AS empresa_nome,
                 cfg.asaas_api_key, cfg.asaas_sandbox
          FROM checkout_links cl
          JOIN empresas e ON e.id = cl.empresa_id
          LEFT JOIN configuracoes cfg ON cfg.empresa_id = cl.empresa_id
-         WHERE cl.token = $1 AND cl.status = 'pendente'`,
+         WHERE cl.token = $1 AND cl.status = 'pendente'
+         FOR UPDATE OF cl`,
         [req.params.token]
       );
 
-      if (result.rowCount === 0) return erro(res, 404, 'Link não encontrado ou já pago');
+      if (result.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return erro(res, 404, 'Link não encontrado ou já pago');
+      }
 
       const link = result.rows[0];
 
       if (link.boleto_url) {
+        await client.query('COMMIT');
         return ok(res, { boleto_url: link.boleto_url, boleto_linha: link.boleto_linha });
       }
 
-      if (!link.asaas_api_key) return erro(res, 400, 'Boleto não disponível para este link');
+      if (!link.asaas_api_key) {
+        await client.query('ROLLBACK');
+        return erro(res, 400, 'Boleto não disponível para este link');
+      }
 
       const apiKey  = decryptField(link.asaas_api_key);
       const sandbox = link.asaas_sandbox !== false;
@@ -331,18 +332,25 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
         externalReference: link.token
       });
 
-      await pool.query(
+      await client.query(
         `UPDATE checkout_links SET boleto_url = $1, boleto_linha = $2, asaas_payment_id = $3, atualizado_em = NOW() AT TIME ZONE 'America/Fortaleza' WHERE token = $4`,
         [boleto.invoiceUrl || boleto.bankSlipUrl, boleto.linhaDigitavel, boleto.id, link.token]
       );
+
+      await client.query('COMMIT');
 
       return ok(res, {
         boleto_url:   boleto.invoiceUrl || boleto.bankSlipUrl,
         boleto_linha: boleto.linhaDigitavel
       });
     } catch (err) {
+      if (client) {
+        try { await client.query('ROLLBACK'); } catch (_) { /* transação já encerrada */ }
+      }
       console.error('[checkout] POST boleto:', err.message);
       return erro(res, 500, 'Erro ao gerar boleto');
+    } finally {
+      client?.release();
     }
   });
 

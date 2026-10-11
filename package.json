@@ -10,7 +10,7 @@
     "test:smoke": "node test/validate.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "devDependencies": {
     "jest": "^29.7.0",
@@ -23,10 +23,15 @@
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.22.2",
+    "express": "^4.22.3",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.1.1",
-    "nodemailer": "^9.0.3",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.1.0",
     "pg": "^8.11.5"
+  },
+  "overrides": {
+    "body-parser": "1.20.8",
+    "proxy-addr": "2.0.8",
+    "qs": "6.16.0"
   }
 }
