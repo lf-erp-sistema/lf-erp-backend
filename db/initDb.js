@@ -432,6 +432,9 @@ function createInitDb(pool, { hoje, addDias, atualizarStatusContasReceberPorEmpr
       ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS empresa_id INTEGER;
       ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS empresa_id INTEGER;
       ALTER TABLE investimentos ADD COLUMN IF NOT EXISTS empresa_id INTEGER;
+      ALTER TABLE compra_itens ADD COLUMN IF NOT EXISTS empresa_id INTEGER;
+      ALTER TABLE venda_itens ADD COLUMN IF NOT EXISTS empresa_id INTEGER;
+      ALTER TABLE movimentacoes_estoque ADD COLUMN IF NOT EXISTS empresa_id INTEGER;
     `);
 
     await pool.query(`
@@ -456,6 +459,7 @@ function createInitDb(pool, { hoje, addDias, atualizarStatusContasReceberPorEmpr
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome_completo TEXT;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cpf TEXT;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nascimento TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP NOT NULL DEFAULT NOW();
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP NOT NULL DEFAULT NOW();
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_saas_owner BOOLEAN NOT NULL DEFAULT FALSE;
@@ -518,6 +522,7 @@ function createInitDb(pool, { hoje, addDias, atualizarStatusContasReceberPorEmpr
       ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS pix_certificado TEXT;
       ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS pix_chave TEXT;
       ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS pix_sandbox BOOLEAN DEFAULT TRUE;
+      ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS cidade TEXT;
     `);
 
     // ================= EMPRESA PADRÃO =================

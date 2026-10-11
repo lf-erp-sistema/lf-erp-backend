@@ -34,7 +34,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
 
   async function getCfgEmpresa(empresaId) {
     const r = await pool.query(
-      `SELECT nome, pix_chave, cidade,
+      `SELECT nome_empresa AS nome, pix_chave, cidade,
               asaas_api_key, asaas_sandbox
        FROM configuracoes WHERE empresa_id = $1`,
       [empresaId]
@@ -241,7 +241,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
   router.get('/p/:token', checkoutPublicoRateLimiter, async (req, res) => {
     try {
       const result = await pool.query(
-        `SELECT cl.*, e.nome AS empresa_nome, e.cidade AS empresa_cidade,
+        `SELECT cl.*, e.nome AS empresa_nome, cfg.cidade AS empresa_cidade,
                 cfg.asaas_api_key IS NOT NULL AS tem_asaas
          FROM checkout_links cl
          JOIN empresas e ON e.id = cl.empresa_id

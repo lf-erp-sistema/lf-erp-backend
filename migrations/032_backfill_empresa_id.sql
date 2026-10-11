@@ -156,3 +156,9 @@ CREATE INDEX IF NOT EXISTS idx_compra_itens_empresa_id
 CREATE INDEX IF NOT EXISTS idx_movimentacoes_empresa_id
   ON movimentacoes_estoque (empresa_id)
   WHERE empresa_id IS NOT NULL;
+
+-- Movido de 015_indexes_performance.sql, que rodava antes desta migration
+-- existir e quebrava o bootstrap em um banco novo (empresa_id não existe em
+-- movimentacoes_estoque até as linhas ADD COLUMN acima rodarem).
+CREATE INDEX IF NOT EXISTS idx_movim_empresa_produto
+  ON movimentacoes_estoque(empresa_id, produto_id);

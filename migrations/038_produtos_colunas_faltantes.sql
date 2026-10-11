@@ -12,3 +12,21 @@ ALTER TABLE produtos ADD COLUMN IF NOT EXISTS deletado_em       TIMESTAMP;
 
 ALTER TABLE clientes    ADD COLUMN IF NOT EXISTS deletado_em    TIMESTAMP;
 ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS deletado_em   TIMESTAMP;
+
+-- Índices parciais sobre deletado_em — movidos de 001_indexes.sql, que rodava
+-- antes desta migration existir e quebrava o bootstrap em um banco novo
+-- (deletado_em não existe até as linhas ADD COLUMN acima rodarem).
+CREATE INDEX IF NOT EXISTS idx_produtos_deletado_em     ON produtos (empresa_id, deletado_em) WHERE deletado_em IS NULL;
+CREATE INDEX IF NOT EXISTS idx_clientes_deletado_em     ON clientes (empresa_id, deletado_em) WHERE deletado_em IS NULL;
+CREATE INDEX IF NOT EXISTS idx_fornecedores_deletado_em ON fornecedores (empresa_id, deletado_em) WHERE deletado_em IS NULL;
+
+-- Movidos de 015_indexes_performance.sql, que rodava antes desta migration
+-- existir e quebrava o bootstrap em um banco novo. Os nomes são distintos dos
+-- índices legados sobre a coluna `empresa` (texto), para garantir a criação
+-- dos índices corretos sobre `empresa_id`.
+CREATE INDEX IF NOT EXISTS idx_produtos_empresa_id_ativos
+  ON produtos(empresa_id, deletado_em NULLS FIRST);
+CREATE INDEX IF NOT EXISTS idx_clientes_empresa_id_ativos
+  ON clientes(empresa_id, deletado_em NULLS FIRST);
+CREATE INDEX IF NOT EXISTS idx_fornecedores_empresa_id_ativos
+  ON fornecedores(empresa_id, deletado_em NULLS FIRST);

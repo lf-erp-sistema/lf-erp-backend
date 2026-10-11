@@ -15,6 +15,9 @@
 
 const nodemailer = require('nodemailer');
 const { validarHostExterno } = require('../utils/ssrfGuard');
+const {
+  SMTP_CONNECTION_TIMEOUT_MS, SMTP_GREETING_TIMEOUT_MS, SMTP_SOCKET_TIMEOUT_MS
+} = require('../utils/email');
 
 // Template simples: substitui {{variavel}} pelos valores
 function aplicarTemplate(template, vars) {
@@ -154,7 +157,29 @@ function safeDecryptSMTP(v) {
 module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
   const router = require('express').Router();
 
+  const exigirFinanceiroEditar = requirePermissao(pool, 'financeiro', 'editar');
 
+  // Gate de /disparar-preventivo: aceita cron (X-Cron-Secret ou Authorization == CRON_SECRET)
+  // OU usuário autenticado com permissão financeiro/editar. Nunca os dois caminhos ao mesmo
+  // tempo, e nunca sem nenhum dos dois — a API precisa ser segura isoladamente, não só a UI.
+  function gateDisparoPreventivo(req, res, next) {
+    const cronSecret = process.env.CRON_SECRET;
+    const tokenHeader = req.headers['x-cron-secret'] || req.headers['authorization']?.replace('Bearer ', '');
+    const isCron = Boolean(cronSecret) && tokenHeader === cronSecret;
+    req._disparoPreventivoIsCron = isCron;
+
+    if (isCron) return next();
+
+    // Caminho manual: mesma cadeia de auth + permissão + rate limit usada nas
+    // outras rotas de escrita deste arquivo (ex. /disparar, /config).
+    auth(req, res, (err) => {
+      if (err) return next(err);
+      exigirFinanceiroEditar(req, res, (err2) => {
+        if (err2) return next(err2);
+        writeRateLimiter(req, res, next);
+      });
+    });
+  }
 
   async function getEmpresa(req) {
     return validarAcessoEmpresa(req, req.query.empresa || req.body?.empresa, req.empresa_id);
@@ -303,7 +328,10 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
               host: cfg.smtp_host,
               port: Number(cfg.smtp_port || 587),
               secure: Number(cfg.smtp_port) === 465,
-              auth: { user: cfg.smtp_user, pass: cfg.smtp_pass }
+              auth: { user: cfg.smtp_user, pass: cfg.smtp_pass },
+              connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+              greetingTimeout:   SMTP_GREETING_TIMEOUT_MS,
+              socketTimeout:     SMTP_SOCKET_TIMEOUT_MS
             });
           } catch (te) {
             console.error('[alertas] transporter error:', te.message);
@@ -443,12 +471,9 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
   });
 
   // ── POST /alertas/disparar-preventivo — cron webhook ou disparo manual ────────
-  router.post('/disparar-preventivo', async (req, res) => {
+  router.post('/disparar-preventivo', gateDisparoPreventivo, async (req, res) => {
     try {
-      // Aceita CRON_SECRET (webhook externo) ou JWT (usuário autenticado)
-      const cronSecret = process.env.CRON_SECRET;
-      const tokenHeader = req.headers['x-cron-secret'] || req.headers['authorization']?.replace('Bearer ', '');
-      const isCron = cronSecret && tokenHeader === cronSecret;
+      const isCron = req._disparoPreventivoIsCron;
 
       let emp = null;
       if (isCron) {
@@ -459,10 +484,7 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
         if (!r.rowCount) return erro(res, 404, 'Empresa não encontrada');
         emp = r.rows[0];
       } else {
-        // Usuário autenticado via JWT
-        await new Promise((resolve, reject) => {
-          require('../middleware/auth').auth(req, res, (err) => err ? reject(err) : resolve());
-        });
+        // Usuário autenticado (auth + requirePermissao já validados no gate acima)
         emp = await getEmpresa(req);
         if (!emp) return erro(res, 403, 'Sem acesso');
       }

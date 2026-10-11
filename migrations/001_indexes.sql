@@ -21,19 +21,17 @@ CREATE INDEX IF NOT EXISTS idx_usuarios_empresa_id     ON usuarios (empresa_id);
 CREATE INDEX IF NOT EXISTS idx_produtos_empresa        ON produtos (empresa);
 CREATE INDEX IF NOT EXISTS idx_produtos_empresa_id     ON produtos (empresa_id);
 CREATE INDEX IF NOT EXISTS idx_produtos_codigo_barras  ON produtos (codigo_barras) WHERE codigo_barras IS NOT NULL;
--- Partial index: listagens filtram deletado_em IS NULL com frequência
-CREATE INDEX IF NOT EXISTS idx_produtos_deletado_em    ON produtos (empresa_id, deletado_em) WHERE deletado_em IS NULL;
+-- Índices parciais com deletado_em: ver migration 038_produtos_colunas_faltantes.sql
+-- (é lá que a coluna deletado_em é garantida — criá-los aqui quebra bootstrap em banco novo).
 
 -- ── Clientes ─────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_clientes_empresa        ON clientes (empresa);
 CREATE INDEX IF NOT EXISTS idx_clientes_empresa_id     ON clientes (empresa_id);
 CREATE INDEX IF NOT EXISTS idx_clientes_cpf            ON clientes (cpf) WHERE cpf IS NOT NULL AND cpf <> '';
-CREATE INDEX IF NOT EXISTS idx_clientes_deletado_em    ON clientes (empresa_id, deletado_em) WHERE deletado_em IS NULL;
 
 -- ── Fornecedores ─────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_fornecedores_empresa    ON fornecedores (empresa);
 CREATE INDEX IF NOT EXISTS idx_fornecedores_empresa_id ON fornecedores (empresa_id);
-CREATE INDEX IF NOT EXISTS idx_fornecedores_deletado_em ON fornecedores (empresa_id, deletado_em) WHERE deletado_em IS NULL;
 
 -- ── Vendas e Itens ────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_vendas_empresa          ON vendas (empresa);
@@ -43,7 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_vendas_empresa_id_data  ON vendas (empresa_id, da
 CREATE INDEX IF NOT EXISTS idx_vendas_cliente          ON vendas (cliente_id);
 CREATE INDEX IF NOT EXISTS idx_venda_itens_venda       ON venda_itens (venda_id);
 CREATE INDEX IF NOT EXISTS idx_venda_itens_empresa     ON venda_itens (empresa);
-CREATE INDEX IF NOT EXISTS idx_venda_itens_empresa_id  ON venda_itens (empresa_id);
+-- idx_venda_itens_empresa_id: ver migration 032_backfill_empresa_id.sql
+-- (é lá que a coluna empresa_id é adicionada em venda_itens — criar o índice
+-- aqui quebra bootstrap em banco novo).
 CREATE INDEX IF NOT EXISTS idx_venda_itens_produto     ON venda_itens (produto_id);
 
 -- ── Compras e Itens ───────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_compras_empresa         ON compras (empresa);
 CREATE INDEX IF NOT EXISTS idx_compras_empresa_id      ON compras (empresa_id);
 CREATE INDEX IF NOT EXISTS idx_compras_empresa_id_data ON compras (empresa_id, data DESC);
 CREATE INDEX IF NOT EXISTS idx_compra_itens_compra     ON compra_itens (compra_id);
-CREATE INDEX IF NOT EXISTS idx_compra_itens_empresa_id ON compra_itens (empresa_id);
+-- idx_compra_itens_empresa_id: ver migration 032_backfill_empresa_id.sql (mesmo motivo acima)
 CREATE INDEX IF NOT EXISTS idx_compra_itens_produto    ON compra_itens (produto_id);
 
 -- ── Contas a Receber ──────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_contas_pagar_vencimento_id ON contas_pagar (empre
 
 -- ── Movimentações de Estoque ──────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_mov_estoque_empresa        ON movimentacoes_estoque (empresa);
-CREATE INDEX IF NOT EXISTS idx_mov_estoque_empresa_id     ON movimentacoes_estoque (empresa_id);
+-- idx_mov_estoque_empresa_id: ver migration 032_backfill_empresa_id.sql (mesmo motivo acima)
 CREATE INDEX IF NOT EXISTS idx_mov_estoque_produto        ON movimentacoes_estoque (produto_id);
 CREATE INDEX IF NOT EXISTS idx_mov_estoque_data           ON movimentacoes_estoque (produto_id, data_movimentacao);
 

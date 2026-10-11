@@ -5,6 +5,14 @@
 
 const nodemailer = require('nodemailer');
 
+// Timeouts conservadores e configuráveis por ambiente — sem eles, o Nodemailer usa
+// defaults bem mais longos (connectionTimeout 2min, greetingTimeout 30s, socketTimeout
+// 10min), deixando a requisição HTTP pendente por muito tempo se o SMTP estiver
+// inacessível ou lento. Nunca logar usuário/senha/token SMTP, só os timeouts em si.
+const SMTP_CONNECTION_TIMEOUT_MS = Number(process.env.SMTP_CONNECTION_TIMEOUT_MS) || 10000;
+const SMTP_GREETING_TIMEOUT_MS   = Number(process.env.SMTP_GREETING_TIMEOUT_MS)   || 10000;
+const SMTP_SOCKET_TIMEOUT_MS     = Number(process.env.SMTP_SOCKET_TIMEOUT_MS)     || 20000;
+
 async function getSaasSmtp(pool) {
   const r = await pool.query(
     `SELECT smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, app_url
@@ -20,7 +28,10 @@ function criarTransporter(cfg) {
     port:   Number(cfg.smtp_port || 587),
     secure: Number(cfg.smtp_port) === 465,
     auth:   { user: cfg.smtp_user, pass: cfg.smtp_pass },
-    tls:    { rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false' }
+    tls:    { rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false' },
+    connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout:   SMTP_GREETING_TIMEOUT_MS,
+    socketTimeout:     SMTP_SOCKET_TIMEOUT_MS
   });
 }
 
@@ -112,4 +123,7 @@ async function enviarEmailBoasVindas(pool, { nomeEmpresa, nomeUsuario, email, us
   }
 }
 
-module.exports = { enviarEmailBoasVindas, getSaasSmtp, criarTransporter };
+module.exports = {
+  enviarEmailBoasVindas, getSaasSmtp, criarTransporter,
+  SMTP_CONNECTION_TIMEOUT_MS, SMTP_GREETING_TIMEOUT_MS, SMTP_SOCKET_TIMEOUT_MS
+};

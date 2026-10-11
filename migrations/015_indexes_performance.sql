@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_cp_compra
 -- ── vendas ────────────────────────────────────────────────────────────────────
 
 -- Listagem com filtro de período (GET /vendas/:empresa)
-CREATE INDEX IF NOT EXISTS idx_vendas_empresa_data
+CREATE INDEX IF NOT EXISTS idx_vendas_empresa_id_data_desc
   ON vendas(empresa_id, data DESC);
 
 -- Listagem por cliente
@@ -56,27 +56,19 @@ CREATE INDEX IF NOT EXISTS idx_compra_itens_compra
 
 -- ── movimentacoes_estoque ─────────────────────────────────────────────────────
 
--- Histórico por empresa + produto (módulo de estoque)
-CREATE INDEX IF NOT EXISTS idx_movim_empresa_produto
-  ON movimentacoes_estoque(empresa_id, produto_id);
+-- idx_movim_empresa_produto (empresa_id, produto_id): ver migration
+-- 032_backfill_empresa_id.sql — é lá que empresa_id é adicionada em
+-- movimentacoes_estoque; criar o índice aqui quebra bootstrap em banco novo.
 
 -- Busca por referência para remoção em estorno/reversão
 CREATE INDEX IF NOT EXISTS idx_movim_ref
   ON movimentacoes_estoque(referencia_tipo, referencia_id);
 
 -- ── cadastros (produtos, clientes, fornecedores) ──────────────────────────────
-
--- Listagem de produtos por empresa (excluindo deletados)
-CREATE INDEX IF NOT EXISTS idx_produtos_empresa
-  ON produtos(empresa_id, deletado_em NULLS FIRST);
-
--- Listagem de clientes por empresa (excluindo deletados)
-CREATE INDEX IF NOT EXISTS idx_clientes_empresa
-  ON clientes(empresa_id, deletado_em NULLS FIRST);
-
--- Listagem de fornecedores por empresa (excluindo deletados)
-CREATE INDEX IF NOT EXISTS idx_fornecedores_empresa
-  ON fornecedores(empresa_id, deletado_em NULLS FIRST);
+-- idx_produtos_empresa / idx_clientes_empresa / idx_fornecedores_empresa
+-- (empresa_id, deletado_em NULLS FIRST): ver migration
+-- 038_produtos_colunas_faltantes.sql — é lá que deletado_em é adicionada;
+-- criar os índices aqui quebra bootstrap em banco novo.
 
 -- ── financeiro_logs ───────────────────────────────────────────────────────────
 

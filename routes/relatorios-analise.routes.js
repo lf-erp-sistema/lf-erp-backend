@@ -490,7 +490,7 @@ MAX(v.data) AS ultima_venda
           AND (p.empresa_id = $1 OR (p.empresa_id IS NULL AND p.empresa = $2))
         LEFT JOIN produto_grades pg
           ON pg.id = vi.grade_id
-          AND (pg.empresa_id = $1 OR (pg.empresa_id IS NULL AND pg.empresa = $2))
+          AND pg.empresa_id = $1
         ${where}
         GROUP BY vi.produto_id, vi.produto_nome, vi.grade_id, pg.atributo1, pg.atributo2
         ORDER BY faturamento_total DESC, vi.produto_nome ASC

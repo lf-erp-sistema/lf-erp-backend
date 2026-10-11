@@ -203,7 +203,7 @@ module.exports = function assistenciaOsRoutes({
           [id, er.id, er.nome]
         ),
         pool.query(
-          `SELECT osi.*, p.nome AS produto_nome, p.estoque_atual AS produto_estoque
+          `SELECT osi.*, p.nome AS produto_nome, p.estoque AS produto_estoque
            FROM ordens_servico_itens osi
            LEFT JOIN produtos p ON p.id = osi.produto_id
            WHERE osi.os_id = $1 ORDER BY osi.id`,
