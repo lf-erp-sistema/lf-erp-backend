@@ -70,18 +70,33 @@ router.put('/configuracoes', auth, writeRateLimiter, requirePermissao(pool, 'con
     const taxaJurosDiaFinal =
       taxa_juros_dia !== undefined ? (taxa_juros_dia != null ? Number(taxa_juros_dia) : null) : null;
 
+    const nomeEmpresaFinal = nome_empresa !== undefined ? String(nome_empresa).trim() : undefined;
+
+    if (logo_url && typeof logo_url !== 'string') {
+      return jsonErro(res, 400, 'logo_url inválida');
+    }
+
     if (logo_url) {
-      if (!logo_url.startsWith('http://') && !logo_url.startsWith('https://')) {
-        return jsonErro(res, 400, 'logo_url deve começar com http:// ou https://');
-      }
-      try {
-        const _pu = new URL(logo_url);
-        const _h  = _pu.hostname.toLowerCase();
-        if (/^(localhost$|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.0\.0\.0$|::1$)/.test(_h)) {
-          return jsonErro(res, 400, 'logo_url não pode apontar para endereços internos');
+      if (logo_url.startsWith('data:')) {
+        const dataUrlMatch = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(logo_url);
+        const base64 = dataUrlMatch?.[1];
+        const bytes = base64 && base64.length % 4 === 0 ? Buffer.byteLength(base64, 'base64') : 0;
+        if (!dataUrlMatch || bytes === 0 || bytes > 300 * 1024) {
+          return jsonErro(res, 400, 'Logo inválido ou muito grande. Use uma imagem de até 300 KB.');
         }
-      } catch {
-        return jsonErro(res, 400, 'logo_url inválida');
+      } else {
+        if (!logo_url.startsWith('http://') && !logo_url.startsWith('https://')) {
+          return jsonErro(res, 400, 'logo_url deve ser uma URL segura ou um PNG processado pelo sistema');
+        }
+        try {
+          const _pu = new URL(logo_url);
+          const _h  = _pu.hostname.toLowerCase();
+          if (/^(localhost$|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.0\.0\.0$|::1$)/.test(_h)) {
+            return jsonErro(res, 400, 'logo_url não pode apontar para endereços internos');
+          }
+        } catch {
+          return jsonErro(res, 400, 'logo_url inválida');
+        }
       }
     }
 
@@ -95,7 +110,7 @@ router.put('/configuracoes', auth, writeRateLimiter, requirePermissao(pool, 'con
     await pool.query(
       `
         UPDATE configuracoes
-        SET nome_empresa = $1,
+        SET nome_empresa = CASE WHEN $10 THEN $1 ELSE nome_empresa END,
             taxa_multa = COALESCE($3, taxa_multa),
             taxa_juros_dia = COALESCE($4, taxa_juros_dia),
             logo_url = CASE WHEN $6 THEN $5 ELSE logo_url END,
@@ -104,7 +119,7 @@ router.put('/configuracoes', auth, writeRateLimiter, requirePermissao(pool, 'con
         WHERE (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $7))
         `,
       [
-        nome_empresa,
+        nomeEmpresaFinal,
         empresaResolvida.id,
         taxaMultaFinal,
         taxaJurosDiaFinal,
@@ -112,7 +127,8 @@ router.put('/configuracoes', auth, writeRateLimiter, requirePermissao(pool, 'con
         logoFinal !== undefined,
         empresaResolvida.nome,
         corFinal,
-        corFinal !== undefined
+        corFinal !== undefined,
+        nomeEmpresaFinal !== undefined
       ]
     );
 
