@@ -56,8 +56,10 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normaliz
       const sessao = await getSessaoAberta(emp.id);
       if (!sessao) return ok(res, { sessao: null });
 
-      const movimentos     = await getMovimentos(sessao.id);
-      const saldo_calculado = await calcularSaldo(sessao.id);
+      const [movimentos, saldo_calculado] = await Promise.all([
+        getMovimentos(sessao.id),
+        calcularSaldo(sessao.id)
+      ]);
 
       // Vendas em dinheiro/pix no período para exibição (não modifica saldo)
       const vendasResult = await pool.query(
