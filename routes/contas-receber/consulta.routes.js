@@ -228,6 +228,19 @@ module.exports = function contasReceberConsultaRoutes({
       const pagina = Math.max(1, normalizarInt(req.query.page || 1));
       const limite = Math.min(normalizarInt(req.query.limit) || 50, 200);
 
+      // A ordenação precisa acontecer no banco, antes do LIMIT/OFFSET. Ordenar
+      // somente a página recebida no frontend fazia a página 1 misturar títulos
+      // antigos e recentes quando havia mais de uma página de resultados.
+      // A coluna é escolhida por whitelist para nunca interpolar entrada livre em SQL.
+      const camposOrdenacao = {
+        id: 'cr.id',
+        cliente_nome: "COALESCE(cr.cliente_nome, '')",
+        data_vencimento: 'cr.data_vencimento',
+        valor: 'cr.valor'
+      };
+      const campoOrdenacao = camposOrdenacao[req.query.ordem] || camposOrdenacao.data_vencimento;
+      const direcaoOrdenacao = String(req.query.ordem_dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
       const filterParamsCR = [...params];
       const resumoGlobalSqlCR = `
         SELECT
@@ -243,7 +256,9 @@ module.exports = function contasReceberConsultaRoutes({
       `;
 
       const offset = (pagina - 1) * limite;
-      const sqlPaginado = sql + ` ORDER BY cr.id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      const sqlPaginado = sql + `
+        ORDER BY ${campoOrdenacao} ${direcaoOrdenacao} NULLS LAST, cr.id ${direcaoOrdenacao}
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       params.push(limite, offset);
 
       const [result, resumoGlobalResult, recebidosParciaisResult] = await Promise.all([
