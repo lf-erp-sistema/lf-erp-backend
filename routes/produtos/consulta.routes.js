@@ -103,6 +103,14 @@ module.exports = function produtosConsultaRoutes({
 
       const params = [];
 
+      let whereSql = `
+  WHERE deletado_em IS NULL
+${adicionarFiltroEmpresaSaaS({
+  params,
+  empresaResolvida
+})}
+`;
+
       let sql = `
   SELECT produtos.*,
         CASE WHEN estoque <= estoque_minimo AND estoque_minimo > 0 THEN TRUE ELSE FALSE END AS alerta_estoque,
@@ -116,24 +124,22 @@ module.exports = function produtosConsultaRoutes({
     ORDER BY principal DESC, ordem ASC, id ASC
     LIMIT 1
   ) img ON true
-  WHERE deletado_em IS NULL
-${adicionarFiltroEmpresaSaaS({
-  params,
-  empresaResolvida
-})}
+  ${whereSql}
 `;
 
       let idx = params.length + 1;
 
       if (busca) {
         const buscaEsc = busca.replace(/[%_\\]/g, '\\$&');
-        sql += `
+        const filtroBuscaSql = `
           AND (
             LOWER(COALESCE(nome, '')) LIKE $${idx} ESCAPE '\\'
             OR LOWER(COALESCE(categoria, '')) LIKE $${idx} ESCAPE '\\'
             OR LOWER(COALESCE(codigo_barras, '')) LIKE $${idx} ESCAPE '\\'
           )
         `;
+        whereSql += filtroBuscaSql;
+        sql += filtroBuscaSql;
         params.push(`%${buscaEsc}%`);
         idx++;
       }
@@ -145,7 +151,9 @@ ${adicionarFiltroEmpresaSaaS({
       const limIdx = idx;
       const offIdx = idx + 1;
 
-      const countSql = `SELECT COUNT(*) AS total FROM (${sql}) AS contagem`;
+      // A contagem não precisa do LATERAL de miniaturas nem da ordenação da lista.
+      // Mantém os mesmos filtros e reduz trabalho de banco em toda paginação.
+      const countSql = `SELECT COUNT(*) AS total FROM produtos ${whereSql}`;
 
       const [countResult, result] = await Promise.all([
         pool.query(countSql, params),
