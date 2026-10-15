@@ -114,7 +114,7 @@ describe('POST /usuarios (criar)', () => {
       }),
       release: jest.fn(),
     };
-    const pool = { connect: jest.fn().mockResolvedValue(client), query: jest.fn() };
+    const pool = { connect: jest.fn().mockResolvedValue(client), query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }) };
     const router = buildRouter(pool);
     const res = mockRes();
     await getHandler(router, 'post', '/usuarios')(buildReq(), res);
@@ -130,7 +130,7 @@ describe('POST /usuarios (criar)', () => {
       }),
       release: jest.fn(),
     };
-    const pool = { connect: jest.fn().mockResolvedValue(client), query: jest.fn() };
+    const pool = { connect: jest.fn().mockResolvedValue(client), query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }) };
     const registrarAuditoria = jest.fn();
     const router = buildRouter(pool, { registrarAuditoria });
     const res = mockRes();
@@ -159,7 +159,7 @@ describe('PUT /usuarios/:id (editar)', () => {
         if (sql.includes('SELECT * FROM usuarios')) {
           return Promise.resolve({ rowCount: 1, rows: [{ id: 5, nome_completo: 'Antigo', usuario: 'antigo', tipo: 'funcionario', senha: '$2b$10$segredo', ...extra }] });
         }
-        if (sql.includes('usuario = $1 AND id <> $2')) return Promise.resolve({ rowCount: 0, rows: [] });
+        if (sql.includes('LOWER(usuario) = LOWER($1) AND id <> $2')) return Promise.resolve({ rowCount: 0, rows: [] });
         return Promise.resolve({ rowCount: 1, rows: [] });
       }),
     };
@@ -193,7 +193,7 @@ describe('PUT /usuarios/:id (editar)', () => {
     const pool = {
       query: jest.fn((sql) => {
         if (sql.includes('SELECT * FROM usuarios')) return Promise.resolve({ rowCount: 1, rows: [{ id: 5, nome_completo: 'Antigo', usuario: 'antigo', tipo: 'funcionario' }] });
-        if (sql.includes('usuario = $1 AND id <> $2')) return Promise.resolve({ rowCount: 1, rows: [{ id: 99 }] });
+        if (sql.includes('LOWER(usuario) = LOWER($1) AND id <> $2')) return Promise.resolve({ rowCount: 1, rows: [{ id: 99 }] });
         return Promise.resolve({ rowCount: 1, rows: [] });
       }),
     };
@@ -201,6 +201,50 @@ describe('PUT /usuarios/:id (editar)', () => {
     const res = mockRes();
     await getHandler(router, 'put', '/usuarios/:id')(buildReq(), res);
     expect(res.statusCode).toBe(400);
+  });
+
+  test('gerente (não-admin) tenta promover usuário a admin -> 403', async () => {
+    const pool = poolComUsuarioAtual();
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'put', '/usuarios/:id')(
+      buildReq({ user: GERENTE, body: { ...buildReq().body, tipo: 'admin' } }),
+      res
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  test('admin consegue promover outro usuário a admin -> 200', async () => {
+    const pool = poolComUsuarioAtual();
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'put', '/usuarios/:id')(
+      buildReq({ body: { ...buildReq().body, tipo: 'admin' } }),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+  });
+
+  test('usuário tenta alterar o próprio nível de acesso -> 403', async () => {
+    const pool = poolComUsuarioAtual({ id: 5, tipo: 'admin' });
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'put', '/usuarios/:id')(
+      buildReq({ user: { id: 5, tipo: 'admin', nome: 'Self Admin' }, body: { ...buildReq().body, tipo: 'gerente' } }),
+      res
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  test('usuário edita o próprio registro sem alterar o tipo -> 200', async () => {
+    const pool = poolComUsuarioAtual({ id: 5, tipo: 'admin' });
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'put', '/usuarios/:id')(
+      buildReq({ user: { id: 5, tipo: 'admin', nome: 'Self Admin' }, body: { ...buildReq().body, tipo: 'admin' } }),
+      res
+    );
+    expect(res.statusCode).toBe(200);
   });
 
   test('sucesso sem trocar senha: audita "edicao" com senha_alterada=false e sem vazar hash de senha', async () => {

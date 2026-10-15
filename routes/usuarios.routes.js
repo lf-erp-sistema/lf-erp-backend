@@ -97,6 +97,14 @@ module.exports = function usuariosRoutes({
         return jsonErro(res, 403, limitePlano.mensagem);
       }
 
+      const usuarioExistente = await pool.query(
+        `SELECT id FROM usuarios WHERE LOWER(usuario) = LOWER($1)`,
+        [usuario.trim()]
+      );
+      if (usuarioExistente.rowCount > 0) {
+        return jsonErro(res, 400, 'Usuário já existe');
+      }
+
       const senhaHash = await bcrypt.hash(senha.trim(), 10);
 
       const clienteTx = await pool.connect();
@@ -183,8 +191,16 @@ module.exports = function usuariosRoutes({
         return jsonErro(res, 404, 'Usuário não encontrado');
       }
 
+      if (tipo === 'admin' && req.user.tipo !== 'admin' && !req.user.is_saas_owner) {
+        return jsonErro(res, 403, 'Apenas administradores podem promover um usuário a admin');
+      }
+
+      if (req.user.id === id && tipo !== atualResult.rows[0].tipo) {
+        return jsonErro(res, 403, 'Você não pode alterar seu próprio nível de acesso');
+      }
+
       const usuarioDuplicado = await pool.query(
-        `SELECT id FROM usuarios WHERE usuario = $1 AND id <> $2`,
+        `SELECT id FROM usuarios WHERE LOWER(usuario) = LOWER($1) AND id <> $2`,
         [usuario.trim(), id]
       );
 

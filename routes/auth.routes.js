@@ -57,7 +57,9 @@ module.exports = function authRoutes({
           ORDER BY empresa_id DESC NULLS LAST
           LIMIT 1
         ) cfg ON true
-        WHERE LOWER(u.usuario) = LOWER($1)`,
+        WHERE LOWER(u.usuario) = LOWER($1)
+        ORDER BY u.id
+        LIMIT 1`,
         [usuario]
       );
 
