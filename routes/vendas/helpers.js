@@ -41,7 +41,7 @@ function createVendasHelpers({ normalizarInt, normalizarDecimal, registrarMovime
       FROM contas_receber
       WHERE venda_id = $1
         AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))
-        AND LOWER(COALESCE(status, 'pendente')) = 'pago'
+        AND LOWER(COALESCE(status, 'pendente')) IN ('pago', 'parcial', 'parcial_atrasado')
       LIMIT 1
       `,
       [vendaId, empresaResolvida.id, empresaResolvida.nome]
@@ -137,13 +137,16 @@ function createVendasHelpers({ normalizarInt, normalizarDecimal, registrarMovime
   }
 
   async function removerDadosDependentesVenda({ client, vendaId, empresaResolvida }) {
-    // VP-C1: preservar parcelas já pagas — só deleta as pendentes/atrasadas/parciais
+    // VP-C1: preservar parcelas já pagas (total ou parcialmente) — só deleta
+    // as pendentes/atrasadas. vendaPossuiParcelaPaga() já bloqueia edição/exclusão
+    // quando há parcela paga/parcial, então este DELETE nunca deveria alcançar
+    // uma linha 'parcial'/'parcial_atrasado' — mantido como defesa em profundidade.
     await client.query(
       `
       DELETE FROM contas_receber
       WHERE venda_id = $1
         AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))
-        AND LOWER(COALESCE(status, 'pendente')) NOT IN ('pago')
+        AND LOWER(COALESCE(status, 'pendente')) NOT IN ('pago', 'parcial', 'parcial_atrasado')
 `,
       [vendaId, empresaResolvida.id, empresaResolvida.nome]
     );

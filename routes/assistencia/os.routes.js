@@ -476,6 +476,12 @@ module.exports = function assistenciaOsRoutes({
       const er = await validarAcessoEmpresa(req, req.body.empresa);
       if (!er) return erro(res, 403, 'Sem acesso');
 
+      const check = await pool.query(
+        `SELECT id FROM ordens_servico WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
+        [id, er.id, er.nome]
+      );
+      if (!check.rows[0]) return erro(res, 404, 'OS não encontrada');
+
       const { dias_garantia = 90, data_inicio, condicoes, observacoes } = req.body;
       const inicio = normalizarDataISO(data_inicio) || hoje();
       const fimISO = addDias(inicio, Number(dias_garantia));
@@ -503,6 +509,12 @@ module.exports = function assistenciaOsRoutes({
       if (!id) { await client.query('ROLLBACK'); return erro(res, 400, 'ID inválido'); }
       const er = await validarAcessoEmpresa(req, req.body.empresa);
       if (!er) { await client.query('ROLLBACK'); return erro(res, 403, 'Sem acesso'); }
+
+      const check = await client.query(
+        `SELECT id FROM ordens_servico WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
+        [id, er.id, er.nome]
+      );
+      if (!check.rows[0]) { await client.query('ROLLBACK'); return erro(res, 404, 'OS não encontrada'); }
 
       const { descricao } = req.body;
       if (!descricao?.trim()) { await client.query('ROLLBACK'); return erro(res, 400, 'Descrição obrigatória'); }

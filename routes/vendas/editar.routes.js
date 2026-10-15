@@ -98,7 +98,7 @@ module.exports = function vendasEditarRoutes({
         return erro(
           res,
           400,
-          'Esta venda possui conta a receber paga. Estorne o recebimento antes de editar.'
+          'Esta venda possui conta a receber paga ou parcialmente paga. Estorne o recebimento antes de editar.'
         );
       }
 

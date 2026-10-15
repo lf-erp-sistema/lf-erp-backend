@@ -1,6 +1,7 @@
 ﻿'use strict';
 const express    = require('express');
 const https      = require('https');
+const crypto     = require('crypto');
 const { requirePermissao }        = require('../utils/permissoes');
 const { encryptField, decryptField } = require('../utils/pixCrypto');
 const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas, consultarBoleto: consultarBoletoAsaas } = require('../utils/asaas');
