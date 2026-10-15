@@ -1,9 +1,10 @@
 ﻿'use strict';
 const express = require('express');
 const { requirePermissao }           = require('../utils/permissoes');
-const { hoje }                       = require('../utils/normalizadores');
+const { hoje, addDias }              = require('../utils/normalizadores');
+const { obterPeriodo, adicionarFiltroPeriodo } = require('../utils/periodoUtils');
 const { encryptField, decryptField } = require('../utils/pixCrypto');
-const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas } = require('../utils/asaas');
+const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas, consultarBoleto: consultarBoletoAsaas, verificarWebhookAsaas } = require('../utils/asaas');
 const { enviarEmailBoasVindas, getSaasSmtp, criarTransporter } = require('../utils/email');
 const { jsonErro } = require('../utils/routeHelpers');
 const { createPlanoUtils } = require('../utils/plano');

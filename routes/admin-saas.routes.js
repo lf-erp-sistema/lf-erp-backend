@@ -1,6 +1,7 @@
 ﻿'use strict';
 const express = require('express');
 const { requirePermissao }           = require('../utils/permissoes');
+const { hoje, addDias }              = require('../utils/normalizadores');
 const { encryptField, decryptField } = require('../utils/pixCrypto');
 const { getSaasSmtp, criarTransporter, enviarEmailBoasVindas } = require('../utils/email');
 const { jsonErro } = require('../utils/routeHelpers');

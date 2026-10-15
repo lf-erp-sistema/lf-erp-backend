@@ -3,8 +3,9 @@
  * Documentação: https://docs.asaas.com/reference
  */
 
-const https = require('https');
-const http  = require('http');
+const https  = require('https');
+const http   = require('http');
+const crypto = require('crypto');
 
 const ASAAS_PROD    = 'https://api.asaas.com';
 const ASAAS_SANDBOX = 'https://sandbox.asaas.com';
@@ -167,4 +168,26 @@ async function consultarBoleto(apiKey, sandbox, boletoId) {
   };
 }
 
-module.exports = { resolverClienteAsaas, criarBoleto, consultarBoleto };
+// Verifica o header asaas-access-token em qualquer webhook Asaas do sistema
+// (boleto de Contas a Receber e assinatura SaaS compartilham a mesma conta/token).
+// Se ASAAS_WEBHOOK_TOKEN não estiver configurado, REJEITA a requisição (fail-closed).
+// Sem essa validação, qualquer requisição forjada poderia marcar cobranças como pagas.
+function verificarWebhookAsaas(req, res) {
+  const token = process.env.ASAAS_WEBHOOK_TOKEN;
+  if (!token) {
+    console.error('[webhook-asaas] ASAAS_WEBHOOK_TOKEN nao configurado — requisicao rejeitada por seguranca');
+    res.status(503).json({ erro: 'Webhook nao configurado' });
+    return false;
+  }
+  const headerToken = req.headers['asaas-access-token'] || '';
+  const bufA = Buffer.from(token);
+  const bufB = Buffer.from(headerToken);
+  if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+    console.warn('[webhook-asaas] Token invalido — requisicao rejeitada IP:', req.ip);
+    res.status(401).json({ erro: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+module.exports = { resolverClienteAsaas, criarBoleto, consultarBoleto, verificarWebhookAsaas };

@@ -1,10 +1,9 @@
 ﻿'use strict';
 const express    = require('express');
 const https      = require('https');
-const crypto     = require('crypto');
 const { requirePermissao }        = require('../utils/permissoes');
 const { encryptField, decryptField } = require('../utils/pixCrypto');
-const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas, consultarBoleto: consultarBoletoAsaas } = require('../utils/asaas');
+const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas, consultarBoleto: consultarBoletoAsaas, verificarWebhookAsaas } = require('../utils/asaas');
 const { enviarEmailBoasVindas, getSaasSmtp, criarTransporter } = require('../utils/email');
 const { dispararWebhookComRetry } = require('../utils/webhookContabil');
 const { jsonErro } = require('../utils/routeHelpers');
@@ -559,27 +558,6 @@ router.get('/pagamentos/boleto/status/:contaReceberID', auth, requirePermissao(p
     jsonErro(res, 500, 'Erro ao consultar boleto');
   }
 });
-
-// Verifica o header asaas-access-token nos webhooks Asaas.
-// Se ASAAS_WEBHOOK_TOKEN não estiver configurado, REJEITA a requisição (fail-closed).
-// Sem essa validação, qualquer requisição forjada poderia marcar boletos como pagos.
-function verificarWebhookAsaas(req, res) {
-  const token = process.env.ASAAS_WEBHOOK_TOKEN;
-  if (!token) {
-    console.error('[webhook-asaas] ASAAS_WEBHOOK_TOKEN nao configurado — requisicao rejeitada por seguranca');
-    res.status(503).json({ erro: 'Webhook nao configurado' });
-    return false;
-  }
-  const headerToken = req.headers['asaas-access-token'] || '';
-  const bufA = Buffer.from(token);
-  const bufB = Buffer.from(headerToken);
-  if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
-    console.warn('[webhook-asaas] Token invalido — requisicao rejeitada IP:', req.ip);
-    res.status(401).json({ erro: 'Unauthorized' });
-    return false;
-  }
-  return true;
-}
 
 // POST /pagamentos/boleto/webhook — notificações Asaas (PAYMENT_RECEIVED, etc.)
 router.post('/pagamentos/boleto/webhook', async (req, res) => {
