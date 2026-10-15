@@ -8,7 +8,7 @@ module.exports = function vendasExcluirRoutes({
   auth, writeRateLimiter, pool,
   validarAcessoEmpresa, podeGerenciarVendas,
   atualizarStatusContasReceberPorEmpresa, registrarAuditoria,
-  validarVendaPertenceEmpresa, vendaPossuiParcelaPaga,
+  validarVendaPertenceEmpresa, vendaPossuiParcelaPaga, vendaPossuiDevolucao,
   estornarEstoqueVenda, removerDadosDependentesVenda
 }) {
   const router = express.Router();
@@ -70,6 +70,21 @@ module.exports = function vendasExcluirRoutes({
           res,
           400,
           'Esta venda possui conta a receber paga ou parcialmente paga. Estorne o recebimento antes de excluir.'
+        );
+      }
+
+      const possuiDevolucao = await vendaPossuiDevolucao({
+        client,
+        vendaId: id,
+        empresaResolvida
+      });
+
+      if (possuiDevolucao) {
+        await client.query('ROLLBACK');
+        return erro(
+          res,
+          400,
+          'Esta venda possui devolução registrada. Não é possível excluir — o estorno de estoque duplicaria a devolução já processada.'
         );
       }
 

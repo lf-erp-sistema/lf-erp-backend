@@ -50,6 +50,22 @@ function createVendasHelpers({ normalizarInt, normalizarDecimal, registrarMovime
     return result.rowCount > 0;
   }
 
+  async function vendaPossuiDevolucao({ client, vendaId, empresaResolvida }) {
+    const result = await client.query(
+      `
+      SELECT 1
+      FROM devolucoes
+      WHERE venda_id = $1
+        AND empresa_id = $2
+        AND LOWER(COALESCE(status, 'processada')) <> 'cancelada'
+      LIMIT 1
+      `,
+      [vendaId, empresaResolvida.id]
+    );
+
+    return result.rowCount > 0;
+  }
+
   async function estornarEstoqueVenda({ client, vendaId, empresaResolvida, usuarioId, motivo }) {
     const itensResult = await client.query(
       `
@@ -385,6 +401,7 @@ function createVendasHelpers({ normalizarInt, normalizarDecimal, registrarMovime
   return {
     validarVendaPertenceEmpresa,
     vendaPossuiParcelaPaga,
+    vendaPossuiDevolucao,
     estornarEstoqueVenda,
     removerDadosDependentesVenda,
     inserirItensVendaEBaixarEstoque

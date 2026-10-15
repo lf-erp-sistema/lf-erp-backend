@@ -12,7 +12,7 @@ module.exports = function vendasEditarRoutes({
   normalizarDecimal, normalizarInt, normalizarDataISO, hoje,
   criarParcelasContasReceber, atualizarStatusContasReceberPorEmpresa,
   registrarAuditoria,
-  validarVendaPertenceEmpresa, vendaPossuiParcelaPaga,
+  validarVendaPertenceEmpresa, vendaPossuiParcelaPaga, vendaPossuiDevolucao,
   estornarEstoqueVenda, removerDadosDependentesVenda, inserirItensVendaEBaixarEstoque
 }) {
   const router = express.Router();
@@ -99,6 +99,21 @@ module.exports = function vendasEditarRoutes({
           res,
           400,
           'Esta venda possui conta a receber paga ou parcialmente paga. Estorne o recebimento antes de editar.'
+        );
+      }
+
+      const possuiDevolucao = await vendaPossuiDevolucao({
+        client,
+        vendaId: id,
+        empresaResolvida
+      });
+
+      if (possuiDevolucao) {
+        await client.query('ROLLBACK');
+        return erro(
+          res,
+          400,
+          'Esta venda possui devolução registrada. Não é possível editar — o estorno de estoque duplicaria a devolução já processada.'
         );
       }
 
