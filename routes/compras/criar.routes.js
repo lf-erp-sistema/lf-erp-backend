@@ -39,21 +39,26 @@ module.exports = function comprasCriarRoutes({
       return erro(res, 403, 'Sem acesso');
     }
 
-    // Idempotência: retorna a compra existente se a key já foi processada
-    if (idempotency_key) {
-      const keyStr = String(idempotency_key).slice(0, 128);
-      const existente = await pool.query(
-        `SELECT id FROM compras WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $3)) AND idempotency_key = $2 LIMIT 1`,
-        [empresaResolvida.id, keyStr, empresaResolvida.nome]
-      );
-      if (existente.rowCount > 0) {
-        return ok(res, { compra_id: existente.rows[0].id, dados: { compra_id: existente.rows[0].id }, idempotente: true });
-      }
-    }
+    const keyStr = idempotency_key ? String(idempotency_key).slice(0, 128) : null;
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // Idempotência: retorna a compra existente se a key já foi processada.
+      // Checagem dentro da transação com FOR UPDATE — reduz a janela de corrida
+      // entre duas requisições simultâneas com a mesma key (a rede de segurança
+      // final continua sendo o índice único compras_idempotency_idx).
+      if (keyStr) {
+        const existente = await client.query(
+          `SELECT id FROM compras WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $3)) AND idempotency_key = $2 LIMIT 1 FOR UPDATE`,
+          [empresaResolvida.id, keyStr, empresaResolvida.nome]
+        );
+        if (existente.rowCount > 0) {
+          await client.query('ROLLBACK');
+          return ok(res, { compra_id: existente.rows[0].id, dados: { compra_id: existente.rows[0].id }, idempotente: true });
+        }
+      }
 
       const fornecedorResult = await client.query(
         `SELECT * FROM fornecedores WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3)) AND deletado_em IS NULL`,
@@ -90,7 +95,6 @@ module.exports = function comprasCriarRoutes({
         pagamentoNormalizado === 'duplicata mercantil';
       const parcelasFinal = geraContaPagar ? Math.max(1, Math.min(120, normalizarInt(parcelas || 1) || 1)) : 1;
 
-      const keyFinal = idempotency_key ? String(idempotency_key).slice(0, 128) : null;
       const compraResult = await client.query(
         `INSERT INTO compras
         (empresa, empresa_id, fornecedor_id, data, total, observacao, gerar_conta_pagar, pagamento, status, criado_por, idempotency_key, criado_em, atualizado_em)
@@ -106,7 +110,7 @@ module.exports = function comprasCriarRoutes({
           geraContaPagar,
           pagamentoNormalizado || 'dinheiro',
           req.user.id,
-          keyFinal
+          keyStr
         ]
       );
 
