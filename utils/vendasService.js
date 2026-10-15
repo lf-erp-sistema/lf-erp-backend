@@ -48,7 +48,7 @@ function createVendasService({
       return { ok: false, status: 400, mensagem: 'Dados da venda incompletos' };
     }
 
-    const idempotencyKey = idempotency_key || null;
+    const idempotencyKey = idempotency_key ? String(idempotency_key).slice(0, 128) : null;
 
     const sessaoCaixa = await pool.query(
       `SELECT id FROM caixa_sessoes WHERE empresa_id = $1 AND fechado_em IS NULL LIMIT 1`,
@@ -76,8 +76,11 @@ function createVendasService({
           await client.query('ROLLBACK');
           return { ok: true, deduplicated: true, venda: { id: existing.rows[0].id } };
         }
-      } catch (_e) {
-        // Coluna idempotency_key ainda não existe no schema — ignorar verificação (migration pendente)
+      } catch (e) {
+        // Defesa: só deveria ocorrer se a coluna/índice de idempotência não existir
+        // no schema (migration 041 pendente). Logar para não mascarar silenciosamente
+        // a proteção estar desligada.
+        console.error('[vendas] checagem de idempotency_key falhou, prosseguindo sem dedup:', e.message);
       }
     }
 
@@ -121,8 +124,8 @@ function createVendasService({
 
     const vendaResult = await client.query(
       `INSERT INTO vendas
-      (empresa, empresa_id, cliente_id, cliente_nome, subtotal, desconto, acrescimo, total, pagamento, pagamentos, parcelas, status_pagamento, data, observacao, criado_por, criado_em, atualizado_em)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW(),NOW())
+      (empresa, empresa_id, cliente_id, cliente_nome, subtotal, desconto, acrescimo, total, pagamento, pagamentos, parcelas, status_pagamento, data, observacao, criado_por, idempotency_key, criado_em, atualizado_em)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW(),NOW())
       RETURNING *`,
       [
         empresaResolvida.nome,
@@ -139,7 +142,8 @@ function createVendasService({
         statusFinal,
         normalizarDataISO(data) || hoje(),
         observacao || '',
-        usuarioId
+        usuarioId,
+        idempotencyKey
       ]
     );
 
