@@ -17,6 +17,7 @@ const { emitirNfe, consultarNfe, cancelarNfe, downloadDanfe, downloadXml } = req
 const { montarPayloadNfe } = require('../utils/nfe_builder');
 const { randomUUID } = require('crypto');
 const { erro, ok } = require('../utils/routeHelpers');
+const { encryptField, decryptField } = require('../utils/pixCrypto');
 
 module.exports = ({
   auth,
@@ -36,7 +37,9 @@ module.exports = ({
       `SELECT * FROM nfe_config WHERE empresa_id = $1`,
       [empresaId]
     );
-    return r.rows[0] || null;
+    const config = r.rows[0] || null;
+    if (config?.token_focusnfe) config.token_focusnfe = decryptField(config.token_focusnfe);
+    return config;
   }
 
   // ── Helper: obtém dados completos da empresa ─────────────────────────────
@@ -119,7 +122,7 @@ module.exports = ({
              atualizado_em  = NOW()`,
           [
             empresaResolvida.id,
-            token_focusnfe || null,
+            token_focusnfe ? encryptField(token_focusnfe) : null,
             ambiente != null ? Number(ambiente) : null,
             serie || null,
             codigo_csc || null,

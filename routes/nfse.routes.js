@@ -18,6 +18,7 @@ const {
   emitirNfse, consultarNfse, cancelarNfse, downloadNfsePdf, listarNfse
 } = require('../utils/focusnfe');
 const { erro, ok } = require('../utils/routeHelpers');
+const { encryptField, decryptField } = require('../utils/pixCrypto');
 
 module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normalizarDecimal, requirePermissao }) {
   const router = require('express').Router();
@@ -29,7 +30,9 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
       `SELECT * FROM nfse_config WHERE empresa_id = $1 LIMIT 1`,
       [empresaId]
     );
-    return r.rows[0] || null;
+    const cfg = r.rows[0] || null;
+    if (cfg?.token_focus) cfg.token_focus = decryptField(cfg.token_focus);
+    return cfg;
   }
 
   async function proximoRpsNumero(client, empresaId) {
@@ -89,7 +92,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
            atualizado_em      = NOW()`,
         [
           empresaResolvida.id,
-          token_focus || null,
+          token_focus && token_focus !== '***' ? encryptField(token_focus) : null,
           Number(ambiente || 2),
           codigo_municipio || null,
           item_lista_servico || null,

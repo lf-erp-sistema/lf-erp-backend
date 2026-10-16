@@ -18,6 +18,7 @@
 const { enviarMensagem, aplicarTemplate } = require('../utils/whatsapp');
 const { erro, ok } = require('../utils/routeHelpers');
 const { validarHostExterno } = require('../utils/ssrfGuard');
+const { encryptField, decryptField } = require('../utils/pixCrypto');
 
 const EVENTOS = [
   { key: 'cobranca.atrasada',  label: 'Cobrança atrasada',         variaveis: ['nome', 'valor', 'dias', 'empresa'] },
@@ -53,7 +54,9 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
 
   async function getCfg(empresaId) {
     const r = await pool.query(`SELECT * FROM alertas_config WHERE empresa_id = $1`, [empresaId]);
-    return r.rows[0] || null;
+    const cfg = r.rows[0] || null;
+    if (cfg?.wpp_token) cfg.wpp_token = decryptField(cfg.wpp_token);
+    return cfg;
   }
 
   // ── Config ────────────────────────────────────────────────────────────────
@@ -114,7 +117,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
           wpp_provider || 'link',
           wpp_api_url  || null,
           wpp_instance || null,
-          wpp_token    || null,
+          wpp_token && wpp_token !== '***configurado***' ? encryptField(wpp_token) : null,
           wpp_numero   || null,
           Boolean(wpp_ativo),
           wpp_cooldown_h ? Number(wpp_cooldown_h) : null
