@@ -75,6 +75,22 @@ module.exports = function authRoutes({
 
       const user = result.rows[0];
 
+      // Senha validada ANTES de qualquer checagem de bloqueio/assinatura: do
+      // contrário, um atacante sem a senha correta já descobre se o usuário
+      // existe e o status comercial da empresa (achado A-SEC-003).
+      const senhaOk = await validarSenhaUsuario(senha, user);
+
+      if (!senhaOk) {
+        registrarAuditoria({
+          empresa: user.empresa_nome_real || user.empresa || null,
+          empresa_id: user.empresa_id_real || user.empresa_id || null,
+          usuario_id: user.id, usuario_nome: user.usuario,
+          modulo: 'acesso', acao: 'login_falha',
+          dados_novos: { motivo: 'senha_incorreta' }, req
+        });
+        return jsonErro(res, 401, 'Usuário ou senha inválidos.', 'CREDENCIAIS_INVALIDAS');
+      }
+
       if (!user.is_saas_owner) {
         if (user.bloqueada) {
           return jsonErro(res, 403, 'Empresa bloqueada. Entre em contato com o suporte.', 'EMPRESA_BLOQUEADA');
@@ -90,19 +106,6 @@ module.exports = function authRoutes({
             return jsonErro(res, 403, 'Período de teste expirado. Escolha um plano para continuar.', 'TRIAL_EXPIRADO');
           }
         }
-      }
-
-      const senhaOk = await validarSenhaUsuario(senha, user);
-
-      if (!senhaOk) {
-        registrarAuditoria({
-          empresa: user.empresa_nome_real || user.empresa || null,
-          empresa_id: user.empresa_id_real || user.empresa_id || null,
-          usuario_id: user.id, usuario_nome: user.usuario,
-          modulo: 'acesso', acao: 'login_falha',
-          dados_novos: { motivo: 'senha_incorreta' }, req
-        });
-        return jsonErro(res, 401, 'Usuário ou senha inválidos.', 'CREDENCIAIS_INVALIDAS');
       }
 
       const nomeCompleto = user.nome_completo || user.usuario;

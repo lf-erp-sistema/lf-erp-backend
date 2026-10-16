@@ -3,6 +3,28 @@
 const bcrypt = require('bcrypt');
 
 function createInitDb(pool, { hoje, addDias, atualizarStatusContasReceberPorEmpresa, atualizarStatusContasPagarPorEmpresa }) {
+  // Sincroniza a senha do SaaS Owner a partir de SAAS_OWNER_SENHA em TODO boot,
+  // não só no bootstrap de banco vazio (achado A-SEC-005: antes, a rotação da
+  // variável de ambiente em produção não tinha efeito nenhum, pois o bloco que
+  // a aplicava só rodava depois do fast-path abaixo, que sempre retorna cedo
+  // quando a tabela `empresas` já existe — ou seja, sempre em produção).
+  async function sincronizarSenhaSaasOwner() {
+    const ownerSenhaEnv = process.env.SAAS_OWNER_SENHA;
+    if (!ownerSenhaEnv) return;
+    try {
+      const ownerHash = await bcrypt.hash(ownerSenhaEnv, 10);
+      await pool.query(
+        `UPDATE usuarios SET senha = $1, atualizado_em = NOW()
+         WHERE LOWER(usuario) = 'lfelipeg' AND is_saas_owner = TRUE`,
+        [ownerHash]
+      );
+    } catch (e) {
+      // Tabela `usuarios` pode ainda não existir num banco totalmente novo —
+      // nesse caso o bootstrap completo abaixo cuida da criação do owner.
+      console.warn('[init] sincronizarSenhaSaasOwner (ignorado se banco novo):', e.message);
+    }
+  }
+
   return async function initDb() {
     // Fast-path: banco já inicializado → pula as ~168 queries DDL (cold start 8–15s → <1s)
     //
@@ -16,7 +38,10 @@ function createInitDb(pool, { hoje, addDias, atualizarStatusContasReceberPorEmpr
     const { rows: _chk } = await pool.query(
       "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='empresas' LIMIT 1"
     );
-    if (_chk.length > 0) return;
+    if (_chk.length > 0) {
+      await sincronizarSenhaSaasOwner();
+      return;
+    }
 
     // ================= EMPRESAS / PLANOS / CONFIGURAÇÕES =================
     await pool.query(`
