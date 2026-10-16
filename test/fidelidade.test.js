@@ -88,9 +88,8 @@ describe('acumularPontosFidelidade — cálculo de pontos', () => {
     await acumularPontosFidelidade(pool, { empresaId: 1, clienteId: 1, vendaId: 1, totalVenda: 49.99 });
     // Math.floor(49.99 × 1) = 49
     const insertCall = pool._client.query.mock.calls.find(c => String(c[0]).includes('INSERT'));
-    if (insertCall) {
-      expect(insertCall[1][2]).toBe(49); // pontos = 49
-    }
+    expect(insertCall).toBeDefined();
+    expect(insertCall[1][2]).toBe(49); // pontos = 49
   });
 
   test('pontos zero (valor muito baixo) → return sem INSERT', async () => {
@@ -169,10 +168,9 @@ describe('estornarPontosFidelidade — cálculo proporcional', () => {
     });
 
     const insertCall = pool._client.query.mock.calls.find(c => String(c[0]).includes('INSERT'));
-    if (insertCall) {
-      // proporcao = 100/100 = 1, pontosEstornar = Math.floor(100 × 1) = 100
-      expect(insertCall[1][2]).toBe(100);
-    }
+    expect(insertCall).toBeDefined();
+    // proporcao = 100/100 = 1, pontosEstornar = Math.floor(100 × 1) = 100
+    expect(insertCall[1][2]).toBe(100);
   });
 
   test('devolução parcial (50%) → estorna metade dos pontos', async () => {
@@ -195,10 +193,9 @@ describe('estornarPontosFidelidade — cálculo proporcional', () => {
     });
 
     const insertCall = pool._client.query.mock.calls.find(c => String(c[0]).includes('INSERT'));
-    if (insertCall) {
-      // proporcao = 50/100 = 0.5, pontosEstornar = Math.floor(80 × 0.5) = 40
-      expect(insertCall[1][2]).toBe(40);
-    }
+    expect(insertCall).toBeDefined();
+    // proporcao = 50/100 = 0.5, pontosEstornar = Math.floor(80 × 0.5) = 40
+    expect(insertCall[1][2]).toBe(40);
   });
 
   test('vendaTotal zero → proporcao = 1 (estorna tudo)', async () => {
