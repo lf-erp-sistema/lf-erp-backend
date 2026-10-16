@@ -17,7 +17,7 @@
 
 const crypto = require('crypto');
 const { gerarPixCopiaCola } = require('../utils/pix');
-const { resolverClienteAsaas, criarBoleto } = require('../utils/asaas');
+const { resolverClienteAsaas, criarBoleto, verificarWebhookAsaas } = require('../utils/asaas');
 const { decryptField } = require('../utils/pixCrypto');
 const { requirePermissao } = require('../utils/permissoes');
 const { erro, ok } = require('../utils/routeHelpers');
@@ -368,21 +368,12 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
 
   router.post('/webhook', webhookAsaasRateLimit, async (req, res) => {
     try {
-      const _webhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
-      if (!_webhookToken) {
-        console.error('[checkout-webhook] ASAAS_WEBHOOK_TOKEN não configurado — rejeitando webhook');
-        return res.status(503).json({ erro: 'Webhook não configurado no servidor' });
-      }
-      const _headerToken = req.headers['asaas-access-token'] || '';
-      const lenA = Buffer.byteLength(_webhookToken);
-      const lenB = Buffer.byteLength(_headerToken);
-      const maxLen = Math.max(lenA, lenB);
-      const _bufA = Buffer.concat([Buffer.from(_webhookToken), Buffer.alloc(Math.max(0, maxLen - lenA))]);
-      const _bufB = Buffer.concat([Buffer.from(_headerToken),  Buffer.alloc(Math.max(0, maxLen - lenB))]);
-      if (lenA !== lenB || !crypto.timingSafeEqual(_bufA, _bufB)) {
-        console.warn('[checkout-webhook] Token Asaas invalido — rejeitado IP:', req.ip);
-        return res.status(401).json({ erro: 'Unauthorized' });
-      }
+      // Reimplementava a verificação de assinatura manualmente em vez de
+      // usar verificarWebhookAsaas (utils/asaas.js), já consolidada e
+      // reusada por pagamentos.routes.js/admin.routes.js — uma 3ª cópia da
+      // mesma lógica reintroduzia risco de drift (achado C2-INT-003,
+      // Auditoria de Segurança 2026-10-16).
+      if (!verificarWebhookAsaas(req, res)) return;
 
       const { event, payment } = req.body;
       const token = payment?.externalReference;
