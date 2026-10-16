@@ -111,6 +111,28 @@ module.exports = function assistenciaOsRoutes({
         observacoes, itens = [], checklist = [], aparelho_id,
       } = req.body;
 
+      if (cliente_id) {
+        const clienteCheck = await client.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2 AND deletado_em IS NULL`,
+          [normalizarInt(cliente_id), er.id]
+        );
+        if (clienteCheck.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return erro(res, 404, 'Cliente não encontrado');
+        }
+      }
+
+      if (aparelho_id) {
+        const aparelhoCheck = await client.query(
+          `SELECT id FROM at_aparelhos WHERE id = $1 AND empresa_id = $2`,
+          [normalizarInt(aparelho_id), er.id]
+        );
+        if (aparelhoCheck.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return erro(res, 404, 'Aparelho não encontrado');
+        }
+      }
+
       const numero  = await gerarNumeroOS(er.id, er.nome);
       const maoObra = normalizarDecimal(valor_mao_obra) || 0;
 
@@ -251,6 +273,28 @@ module.exports = function assistenciaOsRoutes({
         procedimento_recomendado, tecnico, valor_mao_obra, data_prevista, data_conclusao,
         observacoes, itens = [], checklist = [], aparelho_id,
       } = req.body;
+
+      if (cliente_id) {
+        const clienteCheck = await client.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2 AND deletado_em IS NULL`,
+          [normalizarInt(cliente_id), er.id]
+        );
+        if (clienteCheck.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return erro(res, 404, 'Cliente não encontrado');
+        }
+      }
+
+      if (aparelho_id) {
+        const aparelhoCheck = await client.query(
+          `SELECT id FROM at_aparelhos WHERE id = $1 AND empresa_id = $2`,
+          [normalizarInt(aparelho_id), er.id]
+        );
+        if (aparelhoCheck.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return erro(res, 404, 'Aparelho não encontrado');
+        }
+      }
 
       await client.query(
         `UPDATE ordens_servico SET

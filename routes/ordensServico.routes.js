@@ -112,6 +112,14 @@ module.exports = ({
       const empresaResolvida = await validarAcessoEmpresa(req, empresa);
       if (!empresaResolvida) { await client.query('ROLLBACK'); return erro(res, 403, 'Sem acesso'); }
 
+      if (cliente_id) {
+        const clienteCheck = await client.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2 AND deletado_em IS NULL`,
+          [normalizarInt(cliente_id), empresaResolvida.id]
+        );
+        if (clienteCheck.rowCount === 0) { await client.query('ROLLBACK'); return erro(res, 404, 'Cliente não encontrado'); }
+      }
+
       const numero      = await gerarNumeroOS(empresaResolvida.id, empresaResolvida.nome);
       const maoObra     = normalizarDecimal(valor_mao_obra) || 0;
       const dtPrevista  = normalizarDataISO(data_prevista)  || null;
@@ -211,6 +219,14 @@ module.exports = ({
         [id, empresaResolvida.id, empresaResolvida.nome]
       );
       if (!check.rows[0]) { await client.query('ROLLBACK'); return erro(res, 404, 'Ordem de serviço não encontrada'); }
+
+      if (cliente_id) {
+        const clienteCheck = await client.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2 AND deletado_em IS NULL`,
+          [normalizarInt(cliente_id), empresaResolvida.id]
+        );
+        if (clienteCheck.rowCount === 0) { await client.query('ROLLBACK'); return erro(res, 404, 'Cliente não encontrado'); }
+      }
 
       await client.query(
         `UPDATE ordens_servico SET

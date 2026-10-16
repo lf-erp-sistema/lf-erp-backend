@@ -109,6 +109,14 @@ module.exports = ({
 
       const clienteId = cliente_id ? Number(cliente_id) : null;
 
+      if (clienteId) {
+        const clienteCheck = await pool.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2 AND deletado_em IS NULL`,
+          [clienteId, empresaResolvida.id]
+        );
+        if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
+      }
+
       const itensResolvidos = await Promise.all(itens.map(async (item) => {
         const produtoId = Number(item.produto_id);
         const gradeId   = item.grade_id ? Number(item.grade_id) : null;

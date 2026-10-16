@@ -117,6 +117,14 @@ module.exports = ({
 
       const clienteId = cliente_id ? Number(cliente_id) : null;
 
+      if (clienteId) {
+        const clienteCheck = await pool.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2 AND deletado_em IS NULL`,
+          [clienteId, empresaResolvida.id]
+        );
+        if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
+      }
+
       // Resolve preços com tabela do cliente
       const itensResolvidos = await Promise.all(itens.map(async (item) => {
         const produtoId = Number(item.produto_id);
@@ -239,6 +247,14 @@ module.exports = ({
         desconto = 0, acrescimo = 0,
         validade, observacao
       } = req.body;
+
+      if (cliente_id) {
+        const clienteCheck = await pool.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2 AND deletado_em IS NULL`,
+          [Number(cliente_id), empresaResolvida.id]
+        );
+        if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
+      }
 
       const client = await pool.connect();
       try {
