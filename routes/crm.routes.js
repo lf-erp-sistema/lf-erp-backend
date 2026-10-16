@@ -140,6 +140,16 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
 
       if (!titulo?.trim()) return erro(res, 400, 'Título é obrigatório');
 
+      // cliente_id não era validado contra a empresa antes do INSERT (achado
+      // F2-SEC-007) — mesmo padrão já usado em orcamentos/pedidos.
+      if (cliente_id) {
+        const clienteCheck = await pool.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2`,
+          [Number(cliente_id), emp.id]
+        );
+        if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
+      }
+
       const estagioFinal = ESTAGIOS.includes(estagio) ? estagio : 'lead';
 
       const result = await pool.query(
@@ -215,6 +225,16 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
       if (!emp) return erro(res, 403, 'Sem acesso');
 
       const { titulo, cliente_id, cliente_nome, valor_estimado, estagio, probabilidade, responsavel_id, responsavel_nome, data_prev_fechamento, origem, observacoes } = req.body;
+
+      // cliente_id não era validado contra a empresa antes do UPDATE (achado
+      // F2-SEC-007) — mesmo padrão já usado em orcamentos/pedidos.
+      if (cliente_id) {
+        const clienteCheck = await pool.query(
+          `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2`,
+          [Number(cliente_id), emp.id]
+        );
+        if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
+      }
 
       const result = await pool.query(
         `UPDATE crm_oportunidades SET

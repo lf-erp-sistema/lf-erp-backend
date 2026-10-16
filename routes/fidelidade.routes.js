@@ -200,6 +200,14 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
       const cfg = await getCfg(e.id);
       if (!cfg?.ativo) return erro(res, 400, 'Programa de fidelidade não está ativo');
 
+      // cliente_id não era validado contra a empresa antes de acumular
+      // (achado D2-SEC-002) — mesma checagem já usada em /resgatar.
+      const clienteCheck = await pool.query(
+        `SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2`,
+        [Number(cliente_id), e.id]
+      );
+      if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
+
       await acumularPontosFidelidade(pool, {
         empresaId: e.id,
         clienteId: Number(cliente_id),
