@@ -15,7 +15,7 @@
  */
 
 const { obterPeriodo, adicionarFiltroPeriodo } = require('../utils/periodoUtils');
-const { validarUrlExterna } = require('../utils/ssrfGuard');
+const { validarUrlExterna, fetchSeguro } = require('../utils/ssrfGuard');
 
 module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normalizarDecimal, hoje }) {
   const router = require('express').Router();
@@ -629,7 +629,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
         return res.json({ sucesso: false, erro: 'URL de webhook inválida ou aponta para rede interna.' });
       }
 
-      const resp = await fetch(webhook_url, {
+      const resp = await fetchSeguro(webhook_url, {
         method: 'POST',
         headers,
         body: payload,

@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const crypto = require('crypto');
-const { PLATAFORMAS_VALIDAS, createWebhookRateLimit, createMarketplaceHelpers } = require('./helpers');
+const { PLATAFORMAS_VALIDAS, createWebhookRateLimit, createMarketplaceHelpers, safeDecrypt } = require('./helpers');
 
 // Parte 4/4 de marketplace.routes.js (achado ARCH-01 da Auditoria 360, 2026-10-06):
 // recebimento de notificações de pedidos (sem auth JWT — autenticado por HMAC/x-signature).
@@ -46,7 +46,7 @@ module.exports = function marketplaceWebhookRoutes(deps) {
           console.warn(`[marketplace] webhook ML: seller_id "${sellerId}" sem configuração HMAC`);
           return res.status(401).json({ ok: false });
         }
-        const secret   = cfgCheck.rows[0].client_secret;
+        const secret   = safeDecrypt(cfgCheck.rows[0].client_secret);
         const notifId  = String(payload?.id || '');
         const manifest = `id:${notifId};request-id:${xReqId}`;
         const parts    = Object.fromEntries(xSig.split(',').map(p => { const [k, ...v] = p.split('='); return [k, v.join('=')]; }));
