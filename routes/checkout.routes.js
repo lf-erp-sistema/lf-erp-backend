@@ -225,6 +225,15 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
     message: 'Muitas requisições. Aguarde 1 minuto.',
   });
 
+  // Webhook Asaas sem rate limiter dedicado (achado F2-SEC-003, Auditoria de
+  // Segurança 2026-10-16) — mesmo limiter usado no webhook do marketplace.
+  const webhookAsaasRateLimit = createSharedRateLimiter(pool).middleware({
+    key: (req) => `asaas-webhook:${req.ip || req.connection?.remoteAddress || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 60,
+    message: 'Too many requests',
+  });
+
   // ── GET /checkout/p/:token — dados para a página pública ──────────────────
 
   router.get('/p/:token', checkoutPublicoRateLimiter, async (req, res) => {
@@ -357,7 +366,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
   // ── POST /checkout/webhook — Asaas confirma pagamento (rota global, usa externalReference) ────
   // O Asaas envia para um único URL configurado na conta; identifica o checkout via payment.externalReference
 
-  router.post('/webhook', async (req, res) => {
+  router.post('/webhook', webhookAsaasRateLimit, async (req, res) => {
     try {
       const _webhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
       if (!_webhookToken) {

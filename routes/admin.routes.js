@@ -8,6 +8,7 @@ const { resolverClienteAsaas, criarBoleto: criarBoletoAsaas, consultarBoleto: co
 const { enviarEmailBoasVindas, getSaasSmtp, criarTransporter } = require('../utils/email');
 const { jsonErro } = require('../utils/routeHelpers');
 const { createPlanoUtils } = require('../utils/plano');
+const { createSharedRateLimiter } = require('../utils/sharedRateLimiter');
 
 module.exports = function adminRoutes({
   auth, writeRateLimiter, pool,
@@ -16,6 +17,18 @@ module.exports = function adminRoutes({
 }) {
   const router = express.Router();
   const { obterPlanoEmpresa } = createPlanoUtils(pool, { hoje });
+
+  // Webhook Asaas sem rate limiter dedicado: a verificação de assinatura
+  // (fail-closed, timing-safe) já bloqueia qualquer requisição sem o token
+  // real, mas um atacante sem o token ainda podia gerar volume ilimitado de
+  // 401 (achado F2-SEC-003, Auditoria de Segurança 2026-10-16). Mesmo
+  // limiter já usado no webhook do marketplace.
+  const webhookAsaasRateLimit = createSharedRateLimiter(pool).middleware({
+    key: (req) => `asaas-webhook:${req.ip || req.connection?.remoteAddress || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 60,
+    message: 'Too many requests',
+  });
 // ================= CONFIGURAÇÕES =================
 
 // BUSCAR CONFIGURAÇÕES
@@ -383,7 +396,7 @@ router.get('/admin/billing/status/:empresaId', auth, apenasAdmin, async (req, re
 });
 
 // POST /admin/billing/webhook-assinatura — Asaas notifica pagamento de assinatura
-router.post('/admin/billing/webhook-assinatura', async (req, res) => {
+router.post('/admin/billing/webhook-assinatura', webhookAsaasRateLimit, async (req, res) => {
   try {
     if (!verificarWebhookAsaas(req, res)) return;
 

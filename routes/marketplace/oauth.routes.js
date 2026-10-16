@@ -5,12 +5,25 @@ const { erro, ok } = require('../../utils/routeHelpers');
 const { requirePermissao } = require('../../utils/permissoes');
 const { encryptField } = require('../../utils/pixCrypto');
 const { ML_AUTH, ML_TOKEN_URL, PLATAFORMAS_VALIDAS, createMarketplaceHelpers } = require('./helpers');
+const { createSharedRateLimiter } = require('../../utils/sharedRateLimiter');
 
 // Parte 2/4 de marketplace.routes.js (achado ARCH-01 da Auditoria 360, 2026-10-06): fluxo OAuth2.
 module.exports = function marketplaceOauthRoutes(deps) {
   const { auth, pool, validarAcessoEmpresa } = deps;
   const { getConfig, mlTokenFetch } = createMarketplaceHelpers(deps);
   const router = express.Router();
+
+  // GET /oauth/callback é protegido por validação HMAC do `state` (não
+  // forjável), mas cada requisição com `code` válido dispara uma chamada de
+  // rede real ao endpoint de token do ML; um `state` repetido/incorreto
+  // ainda consome CPU de verificação HMAC (achado F2-SEC-004, Auditoria de
+  // Segurança 2026-10-16).
+  const oauthCallbackRateLimit = createSharedRateLimiter(pool).middleware({
+    key: (req) => `marketplace-oauth-callback:${req.ip || req.connection?.remoteAddress || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 30,
+    message: 'Too many requests',
+  });
 
   router.get('/oauth/url', auth, requirePermissao(pool, 'marketplace', 'configurar'), async (req, res) => {
     try {
@@ -46,7 +59,7 @@ module.exports = function marketplaceOauthRoutes(deps) {
     }
   });
 
-  router.get('/oauth/callback', async (req, res) => {
+  router.get('/oauth/callback', oauthCallbackRateLimit, async (req, res) => {
     try {
       const { code, state } = req.query;
       if (!code || !state) return res.send('<h3>Parâmetros inválidos</h3>');

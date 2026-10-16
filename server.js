@@ -115,6 +115,9 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // Backend é só API JSON — nenhuma resposta deveria ser renderizada como
+  // página interativa (achado A2-SEC-005, Auditoria de Segurança 2026-10-16).
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     if (req.header('x-forwarded-proto') === 'http') {

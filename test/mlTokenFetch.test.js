@@ -29,12 +29,21 @@ function buildState(empresa_id = 99) {
 }
 
 // Constrói app com pool mockado para o fluxo do callback OAuth
-// (getConfig + UPDATE após sucesso)
+// (rate limiter do callback + getConfig + UPDATE após sucesso). O rate
+// limiter (achado F2-SEC-004) consulta rate_limit_buckets antes de qualquer
+// query de negócio em TODA requisição — precisa responder a essa query
+// específica por padrão de SQL, não por ordem de chamada.
 function buildCallbackApp(queryImpl) {
+  let chamadaNegocio = 0;
   const pool = {
-    query: queryImpl || jest.fn()
-      .mockResolvedValueOnce({ rows: [ML_CFG], rowCount: 1 })  // getConfig
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 })          // UPDATE após sucesso
+    query: queryImpl || jest.fn((sql) => {
+      if (typeof sql === 'string' && sql.includes('rate_limit_buckets')) {
+        return Promise.resolve({ rows: [{ request_count: 1, window_started_at: new Date() }] });
+      }
+      chamadaNegocio += 1;
+      if (chamadaNegocio === 1) return Promise.resolve({ rows: [ML_CFG], rowCount: 1 }); // getConfig
+      return Promise.resolve({ rows: [], rowCount: 1 }); // UPDATE após sucesso
+    })
   };
   const app = express();
   app.use(express.json());
