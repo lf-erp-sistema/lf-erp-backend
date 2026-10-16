@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -27,7 +27,7 @@ jobs:
 
       - name: Syntax check route files
         run: |
-          for f in routes/*.js; do
+          find routes middleware utils -name '*.js' -print0 | while IFS= read -r -d '' f; do
             echo "Checking $f..."
             node --check "$f"
           done

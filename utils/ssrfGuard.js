@@ -19,6 +19,9 @@
  */
 
 const dns = require('dns').promises;
+const net = require('net');
+const ipaddr = require('ipaddr.js');
+const { Agent } = require('undici');
 
 const BLOQUEADOS = [
   /^localhost$/i,
@@ -43,7 +46,22 @@ const BLOQUEADOS = [
 
 function hostBloqueado(host) {
   const h = String(host || '').toLowerCase().trim().replace(/^\[|\]$/g, '');
+  if (ipaddr.isValid(h)) {
+    let address = ipaddr.parse(h);
+    if (address.kind() === 'ipv6' && address.isIPv4MappedAddress()) address = address.toIPv4Address();
+    return address.range() !== 'unicast';
+  }
   return BLOQUEADOS.some((r) => r.test(h));
+}
+
+async function resolverPublico(hostname) {
+  const host = hostname.replace(/^\[|\]$/g, '');
+  if (hostBloqueado(host)) throw new Error('Destino privado ou reservado');
+  const addresses = net.isIP(host) ? [{ address: host, family: net.isIP(host) }] : await dns.lookup(host, { all: true });
+  if (!addresses.length || addresses.some(entry => !net.isIP(entry.address) || hostBloqueado(entry.address))) {
+    throw new Error('DNS retornou destino privado ou reservado');
+  }
+  return addresses;
 }
 
 // Valida um hostname/IP: bloqueia por padrão literal E por resolução DNS.
@@ -51,8 +69,8 @@ async function validarHostExterno(hostname) {
   if (!hostname) return false;
   if (hostBloqueado(hostname)) return false;
   try {
-    const enderecos = await dns.lookup(hostname, { all: true });
-    return enderecos.length > 0 && !enderecos.some((e) => hostBloqueado(e.address));
+    await resolverPublico(hostname);
+    return true;
   } catch {
     return false; // não resolve — trata como inválido
   }
@@ -63,7 +81,7 @@ async function validarHostExterno(hostname) {
 async function validarUrlExterna(urlStr) {
   let url;
   try { url = new URL(urlStr); } catch { return false; }
-  if (!['http:', 'https:'].includes(url.protocol)) return false;
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false;
   return validarHostExterno(url.hostname);
 }
 
@@ -76,20 +94,58 @@ const MAX_REDIRECTS = 3;
 // limite de redirecionamentos.
 async function fetchSeguro(urlStr, options = {}) {
   let atual = urlStr;
+  const timeout = AbortSignal.timeout(15_000);
+  let requestOptions = { ...options, signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout };
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
-    if (!(await validarUrlExterna(atual))) {
+    let url, addresses;
+    try {
+      url = new URL(atual);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('URL inválida');
+      addresses = await resolverPublico(url.hostname);
+    } catch {
       const err = new Error('URL bloqueada por política de segurança (SSRF)');
       err.ssrfBloqueado = true;
       throw err;
     }
-    const resp = await fetch(atual, { ...options, redirect: 'manual' });
+    // O transporte só recebe IPs aprovados, mantendo hostname original para TLS/SNI.
+    const dispatcher = new Agent({ connect: { lookup: (host, opts, callback) => {
+      if (host !== url.hostname.replace(/^\[|\]$/g, '')) return callback(new Error('Hostname inesperado'));
+      const selected = addresses.filter(entry => !opts.family || opts.family === entry.family);
+      if (!selected.length) return callback(new Error('Família IP indisponível'));
+      return opts.all ? callback(null, selected) : callback(null, selected[0].address, selected[0].family);
+    } } });
+    try {
+    const resp = await fetch(atual, { ...requestOptions, dispatcher, redirect: 'manual' });
     if ([301, 302, 303, 307, 308].includes(resp.status)) {
       const location = resp.headers.get('location');
-      if (!location) return resp;
-      atual = new URL(location, atual).toString();
-      continue;
+      if (location) {
+        await resp.body?.cancel();
+        const target = new URL(location, atual);
+        if (target.origin !== url.origin) throw Object.assign(new Error('Redirecionamento entre origens bloqueado'), { ssrfBloqueado: true });
+        if (resp.status === 303 || ([301, 302].includes(resp.status) && String(requestOptions.method).toUpperCase() === 'POST')) {
+          requestOptions = { ...requestOptions, method: 'GET', body: undefined };
+        }
+        atual = target.toString();
+        continue;
+      }
     }
-    return resp;
+    // Consome uma resposta limitada antes de fechar o dispatcher, inclusive em
+    // webhooks cujo chamador só usa o status e não lê o corpo.
+    const chunks = [];
+    let total = 0;
+    if (resp.body) {
+      for await (const chunk of resp.body) {
+        total += chunk.length;
+        if (total > 2 * 1024 * 1024) throw new Error('Resposta externa excede 2 MB');
+        chunks.push(Buffer.from(chunk));
+      }
+    }
+    return new Response([101, 204, 205, 304].includes(resp.status) ? null : Buffer.concat(chunks), {
+      status: resp.status, statusText: resp.statusText, headers: resp.headers
+    });
+    } finally {
+      await dispatcher.close();
+    }
   }
   const err = new Error('Muitos redirecionamentos');
   err.ssrfBloqueado = true;

@@ -47,3 +47,11 @@ test('consulta mensal bloqueia acesso a outra empresa', async () => {
   expect(res.status).toBe(403);
   expect(pool.query).not.toHaveBeenCalled();
 });
+
+test('paginação da interface não recalcula total global de parciais quando solicitado', async () => {
+  const { app, pool } = setup();
+  const res = await request(app).get('/contas-receber/Loja%20teste').query({ incluir_recebidos_parciais: false });
+  expect(res.status).toBe(200);
+  expect(pool.query).toHaveBeenCalledTimes(2);
+  expect(res.body.resumo.total_recebido_parcial).toBeUndefined();
+});

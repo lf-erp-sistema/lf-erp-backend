@@ -8,11 +8,11 @@ const _configCache      = new Map();
 const CONFIG_CACHE_TTL_MS = 60_000;
 
 function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, addDias }) {
-  async function obterConfigEmpresa(empresa, empresaId = null) {
+  async function obterConfigEmpresa(empresa, empresaId = null, executor = pool) {
     const agora = Date.now();
     const cached = _configCache.get(empresa);
     if (cached && agora - cached.ts < CONFIG_CACHE_TTL_MS) return cached.data;
-    const result = await pool.query(
+    const result = await executor.query(
       `SELECT taxa_multa, taxa_juros_dia FROM configuracoes
        WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2)) LIMIT 1`,
       [empresaId || 0, empresa]
@@ -27,9 +27,9 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
     return data;
   }
 
-  async function atualizarStatusContasReceberPorEmpresa(empresa, empresaId = null) {
+  async function atualizarStatusContasReceberPorEmpresa(empresa, empresaId = null, { force = false } = {}) {
     const agora = Date.now();
-    if (_statusThrottleReceber.has(empresa) && agora - _statusThrottleReceber.get(empresa) < STATUS_THROTTLE_MS) return;
+    if (!force && _statusThrottleReceber.has(empresa) && agora - _statusThrottleReceber.get(empresa) < STATUS_THROTTLE_MS) return;
     if (_statusThrottleReceber.size > 500) {
       for (const [k, v] of _statusThrottleReceber) {
         if (agora > v + STATUS_THROTTLE_MS) _statusThrottleReceber.delete(k);
@@ -43,11 +43,11 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
       const lock = await client.query(`SELECT pg_try_advisory_xact_lock($1, 1)`, [lockKey]);
       if (!lock.rows[0].pg_try_advisory_xact_lock) {
         await client.query('ROLLBACK');
-        return;
+        return false;
       }
 
       const dataHoje = hoje();
-      const config = await obterConfigEmpresa(empresa, empresaId);
+      const config = await obterConfigEmpresa(empresa, empresaId, client);
       const taxaMulta    = Number(config?.taxa_multa    ?? 0.02);
       const taxaJurosDia = Number(config?.taxa_juros_dia ?? 0.00033);
 
@@ -112,6 +112,7 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
       );
 
       await client.query('COMMIT');
+      return true;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -132,9 +133,9 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
     );
   }
 
-  async function atualizarStatusContasPagarPorEmpresa(empresa, empresaId = null) {
+  async function atualizarStatusContasPagarPorEmpresa(empresa, empresaId = null, { force = false } = {}) {
     const agora = Date.now();
-    if (_statusThrottlePagar.has(empresa) && agora - _statusThrottlePagar.get(empresa) < STATUS_THROTTLE_MS) return;
+    if (!force && _statusThrottlePagar.has(empresa) && agora - _statusThrottlePagar.get(empresa) < STATUS_THROTTLE_MS) return;
     if (_statusThrottlePagar.size > 500) {
       for (const [k, v] of _statusThrottlePagar) {
         if (agora > v + STATUS_THROTTLE_MS) _statusThrottlePagar.delete(k);
@@ -148,7 +149,7 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
       const lock = await client.query(`SELECT pg_try_advisory_xact_lock($1, 2)`, [lockKey]);
       if (!lock.rows[0].pg_try_advisory_xact_lock) {
         await client.query('ROLLBACK');
-        return;
+        return false;
       }
       await client.query(
         `UPDATE contas_pagar
@@ -171,6 +172,7 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
         [empresa, hoje(), empresaId]
       );
       await client.query('COMMIT');
+      return true;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -192,37 +194,22 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
   }
 
   function agendarAtualizacaoNoturna() {
-    function msAteMeianoite() {
-      const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Fortaleza' }));
-      const meia = new Date(agora);
-      meia.setDate(meia.getDate() + 1);
-      meia.setHours(0, 0, 0, 0);
-      return Math.max(60000, meia - agora);
-    }
-
+    const { createManutencaoDiaria } = require('./manutencaoDiaria');
+    const executar = createManutencaoDiaria({ pool, hoje,
+      atualizarReceber: (nome, id) => atualizarStatusContasReceberPorEmpresa(nome, id, { force: true }),
+      atualizarPagar: (nome, id) => atualizarStatusContasPagarPorEmpresa(nome, id, { force: true }) });
     async function rodar() {
       try {
-        const { rows: empresas } = await pool.query(`SELECT id, nome FROM empresas ORDER BY id`);
-        const batchSize = 5;
-        for (let i = 0; i < empresas.length; i += batchSize) {
-          const batch = empresas.slice(i, i + batchSize);
-          await Promise.all(
-            batch.flatMap(emp => [
-              atualizarStatusContasReceberPorEmpresa(emp.nome, emp.id),
-              atualizarStatusContasPagarPorEmpresa(emp.nome, emp.id)
-            ])
-          );
-        }
-        console.log(`[scheduler] Status financeiro atualizado para ${empresas.length} empresa(s) (meia-noite Fortaleza)`);
+        await executar();
       } catch (err) {
-        console.error('[scheduler] Erro na atualização noturna:', err.message);
+        console.error('[scheduler] Erro na manutenção financeira:', err.message);
+      } finally {
+        // Recupera execução perdida no boot e tenta novamente após falha.
+        // O registro no banco evita refazer atualizações a cada verificação.
+        setTimeout(rodar, 5 * 60_000).unref();
       }
-      setTimeout(rodar, msAteMeianoite()).unref();
     }
-
-    const delay = msAteMeianoite();
-    setTimeout(rodar, delay).unref();
-    console.log(`[scheduler] Próxima atualização noturna em ${Math.round(delay / 60000)} min`);
+    rodar();
   }
 
   async function criarParcelasContasReceber({

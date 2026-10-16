@@ -430,6 +430,7 @@ describe('PUT /usuarios/:id/permissoes', () => {
         }
         return Promise.resolve({ rowCount: 1 });
       }),
+      connect: jest.fn(async function () { return { query: this.query, release: jest.fn() }; }),
     };
     const registrarAuditoria = jest.fn();
     const router = buildRouter(pool, { registrarAuditoria });

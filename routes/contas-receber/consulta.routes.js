@@ -262,7 +262,7 @@ module.exports = function contasReceberConsultaRoutes({
       const [result, resumoGlobalResult, recebidosParciaisResult] = await Promise.all([
         pool.query(sqlPaginado, params).catch(e => { console.error('[cr-q1] lista:', e.message); throw e; }),
         pool.query(resumoGlobalSqlCR, filterParamsCR).catch(e => { console.error('[cr-q2] resumo:', e.message); throw e; }),
-        pool.query(
+        req.query.incluir_recebidos_parciais === 'false' ? Promise.resolve(null) : pool.query(
           `
     SELECT COALESCE(SUM(lf.valor), 0) AS total
     FROM lancamentos_financeiros lf
@@ -307,7 +307,7 @@ module.exports = function contasReceberConsultaRoutes({
         total_pago:            Number(rg.total_pago || 0),
         total_pendente:        Number(rg.total_pendente || 0),
         total_atrasado:        Number(rg.total_atrasado || 0),
-        total_recebido_parcial: Number(recebidosParciaisResult.rows[0].total || 0),
+        ...(recebidosParciaisResult ? { total_recebido_parcial: Number(recebidosParciaisResult.rows[0].total || 0) } : {}),
         qtd_pago:              Number(rg.qtd_pago || 0),
         qtd_pendente:          Number(rg.qtd_pendente || 0),
         qtd_atrasado:          Number(rg.qtd_atrasado || 0)

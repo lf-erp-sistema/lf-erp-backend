@@ -82,6 +82,7 @@ function auth(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, SECRET, { algorithms: ['HS256'] });
+    req.authToken = token;
     req.user = decoded;
     req.empresa_id   = decoded.empresa_id != null ? Number(decoded.empresa_id) : null;
     req.empresa_nome = decoded.empresa_nome || decoded.empresa || null;
@@ -92,7 +93,7 @@ function auth(req, res, next) {
     if (!req.user.is_saas_owner && req.empresa_id == null) {
       return res.status(403).json({ sucesso: false, erro: 'Empresa não identificada no token', codigo: 'EMPRESA_NAO_IDENTIFICADA' });
     }
-    next();
+    return next();
   } catch {
     return res.status(403).json({ sucesso: false, erro: 'Token inválido ou expirado', codigo: 'TOKEN_EXPIRADO' });
   }

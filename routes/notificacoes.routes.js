@@ -122,6 +122,20 @@ router.get('/notificacoes', auth, requirePermissao(pool, 'configuracoes', 'ver')
 
 const _sseClients = new Map(); // empresaId â†’ Set<Response>
 
+const _ssePayloads = new Map();
+function dadosSse(empresaId) {
+  const cached = _ssePayloads.get(empresaId);
+  if (cached && Date.now() - cached.ts < 30_000) return cached.pending;
+  if (_ssePayloads.size >= 1000) _ssePayloads.delete(_ssePayloads.keys().next().value);
+  const entry = { ts: Date.now() };
+  entry.pending = _sseQueryNotificacoes(empresaId).catch(error => {
+    if (_ssePayloads.get(empresaId) === entry) _ssePayloads.delete(empresaId);
+    throw error;
+  });
+  _ssePayloads.set(empresaId, entry);
+  return entry.pending;
+}
+
 async function _sseQueryNotificacoes(empresaId) {
   const dataHoje = hoje();
   const amanha   = addDias(dataHoje, 1);
@@ -216,14 +230,15 @@ async function _sseQueryNotificacoes(empresaId) {
 
 async function ssePush(res, empresaId) {
   try {
-    const dados = await _sseQueryNotificacoes(empresaId);
-    res.write(`event: notificacoes\ndata: ${JSON.stringify(dados)}\n\n`);
+    const dados = await dadosSse(empresaId);
+    if (!res.writableEnded && !res.destroyed) res.write(`event: notificacoes\ndata: ${JSON.stringify(dados)}\n\n`);
   } catch (err) {
     console.error('[SSE] ssePush:', err.message);
   }
 }
 
 function sseNotificarEmpresa(empresaId) {
+  _ssePayloads.delete(empresaId);
   const clientes = _sseClients.get(empresaId);
   if (!clientes || clientes.size === 0) return;
   for (const res of [...clientes]) {
@@ -232,16 +247,11 @@ function sseNotificarEmpresa(empresaId) {
 }
 
 // GET /sse-notificacoes â€” stream de eventos para o frontend
-router.get('/sse-notificacoes', auth, async (req, res) => {
+router.get('/sse-notificacoes', auth, requirePermissao(pool, 'configuracoes', 'ver'), async (req, res) => {
   try {
+    if (!podeGerenciarFinanceiro(req)) return jsonErro(res, 403, 'Sem permissão para receber notificações financeiras');
     const empresaResolvida = await validarAcessoEmpresa(req, null, null);
     if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
 
     const SSE_MAX_EMPRESAS = 1000;
     const empresaId = empresaResolvida.id;
@@ -259,27 +269,51 @@ router.get('/sse-notificacoes', auth, async (req, res) => {
       return jsonErro(res, 429, 'Limite de conexÃµes SSE atingido para esta empresa');
     }
     clientes.add(res);
+    let validando = false;
+    const validar = async () => {
+      if (res.writableEnded || res.destroyed || validando) return false;
+      validando = true;
+      try {
+        if (Date.now() >= Number(req.user.exp || 0) * 1000 || await auth.validarSessao(req)) {
+          res.end();
+          return false;
+        }
+        return true;
+      } catch {
+        res.end();
+        return false;
+      } finally { validando = false; }
+    };
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
 
     // Envio imediato
-    await ssePush(res, empresaId);
 
     // Heartbeat a cada 25s (menor que timeout de proxy)
-    const heartbeat = setInterval(() => {
-      try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+    const heartbeat = setInterval(async () => {
+      try { if (await validar()) res.write(': ping\n\n'); } catch { res.end(); }
     }, 25000);
     heartbeat.unref();
 
     // Refresh a cada 60s
     const refresh = setInterval(async () => {
-      await ssePush(res, empresaId).catch(() => {});
+      if (await validar()) await ssePush(res, empresaId);
     }, 60000);
     refresh.unref();
+    const expiry = setTimeout(() => res.end(), Math.max(1, Math.min(2_147_483_647, Number(req.user.exp || 0) * 1000 - Date.now())));
+    expiry.unref();
 
-    req.on('close', () => {
+    res.on('close', () => {
       clearInterval(heartbeat);
       clearInterval(refresh);
+      clearTimeout(expiry);
       clientes.delete(res);
+      if (!clientes.size) { _sseClients.delete(empresaId); _ssePayloads.delete(empresaId); }
     });
+    await ssePush(res, empresaId);
   } catch (err) {
     console.error('[SSE] ConexÃ£o:', err.message);
     if (!res.headersSent) jsonErro(res, 500, 'Erro no SSE');

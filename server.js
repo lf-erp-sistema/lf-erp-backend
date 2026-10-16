@@ -26,6 +26,7 @@ const {
 } = require('./utils/normalizadores');
 
 const { createRateLimiters } = require('./middleware/rateLimiter');
+const { createValidatedAuth } = require('./middleware/validatedAuth');
 const {
   SECRET,
   JWT_EXPIRY_MS,
@@ -104,8 +105,8 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
   : ['https://lf-erp-frontend.vercel.app'];
 app.use(cors({ origin: allowedOrigins }));
-app.use(express.json({ limit: '1mb' }));
-const jsonUpload = express.json({ limit: '50mb' }); // usado sÃƒÂ³ em rotas de importaÃƒÂ§ÃƒÂ£o
+const { jsonPadrao, jsonUpload } = require('./middleware/jsonBody');
+app.use(jsonPadrao);
 
 app.disable('x-powered-by');
 
@@ -189,7 +190,7 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-const { validarSenhaUsuario, obterSenhaAlteradaEm } = createAuthHelpers(pool);
+const { validarSenhaUsuario } = createAuthHelpers(pool);
 
 const {
   obterEmpresaPorId, obterEmpresaPorNome, resolverEmpresaRequest,
@@ -206,38 +207,7 @@ const { obterPlanoEmpresa, validarLimitePlano, validarLimiteVendasMes } =
 // bloqueada ou o trial expirasse DURANTE a sessão (só era revalidado em /login,
 // /auth/refresh e /empresa/status). Reusa o cache de 60s já existente em
 // obterPlanoEmpresa (utils/plano.js) -- mesma query, sem custo extra de performance.
-async function auth(req, res, next) {
-  authJwt(req, res, async () => {
-    try {
-      // Troca de senha não revogava tokens já emitidos — um token roubado
-      // continuava válido e renovável via /auth/refresh indefinidamente,
-      // mesmo depois do usuário trocar a senha pelo fluxo normal (achado
-      // A2-SEC-001). Compara o instante da última troca real de senha
-      // (usuarios.senha_alterada_em, cache de 30s) com o "senha_v" gravado
-      // no token no momento em que foi emitido.
-      const senhaAtualEm = await obterSenhaAlteradaEm(req.user.id);
-      const tokenSenhaV  = Number(req.user.senha_v || 0);
-      if (senhaAtualEm > tokenSenhaV) {
-        return res.status(403).json({ sucesso: false, erro: 'Sessão expirada — a senha foi alterada. Faça login novamente.', codigo: 'SENHA_ALTERADA' });
-      }
-
-      if (req.user?.is_saas_owner) return next();
-
-      const plano = await obterPlanoEmpresa(req.empresa_id, req.empresa_nome);
-
-      if (plano?.bloqueada) {
-        return res.status(403).json({ sucesso: false, erro: 'Empresa bloqueada. Entre em contato com o suporte.', codigo: 'EMPRESA_BLOQUEADA' });
-      }
-      if (plano?.assinatura_status === 'trial' && plano.trial_fim && String(plano.trial_fim).slice(0, 10) < hoje()) {
-        return res.status(403).json({ sucesso: false, erro: 'Período de teste expirado. Escolha um plano para continuar.', codigo: 'TRIAL_EXPIRADO' });
-      }
-      next();
-    } catch (e) {
-      console.error('[auth] erro ao revalidar bloqueio/trial/senha:', e.message);
-      next(); // fail-open em falha de infra -- não derruba o sistema por erro de query
-    }
-  });
-}
+const auth = createValidatedAuth({ authJwt, pool, obterPlanoEmpresa, hoje });
 
 const {
   obterConfigEmpresa,

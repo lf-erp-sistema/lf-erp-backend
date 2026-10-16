@@ -79,6 +79,10 @@ module.exports = function usuariosRoutes({
         return jsonErro(res, 400, 'Tipo de usuário inválido');
       }
 
+      if (tipo === 'admin' && req.user.tipo !== 'admin' && !req.user.is_saas_owner) {
+        return jsonErro(res, 403, 'Apenas administradores podem criar outro administrador');
+      }
+
       const forcaSenha = validarForcaSenha(senha.trim());
       if (!forcaSenha.valido) return jsonErro(res, 400, forcaSenha.mensagem);
 
@@ -400,6 +404,9 @@ module.exports = function usuariosRoutes({
   router.put('/usuarios/:id/permissoes', auth, writeRateLimiter, requirePermissao(pool, 'usuarios', 'editar'), async (req, res) => {
     try {
       if (!podeGerenciarUsuarios(req)) return jsonErro(res, 403, 'Sem permissão');
+      if (req.user.tipo !== 'admin' && !req.user.is_saas_owner) {
+        return jsonErro(res, 403, 'Apenas administradores podem delegar permissões');
+      }
 
       const id = Number(req.params.id);
       const empresaResolvida = await validarAcessoEmpresa(req, null, null);
@@ -426,16 +433,19 @@ module.exports = function usuariosRoutes({
         permissoesAnterioresResult.rows.map((r) => [r.modulo, r])
       );
 
+      const permissionClient = await pool.connect();
+      try {
+      await permissionClient.query('BEGIN');
       for (const modulo of MODULOS) {
         if (!permissoes[modulo]) continue;
         const p = permissoes[modulo];
         if (p.usar_padrao) {
-          await pool.query(
+          await permissionClient.query(
             `DELETE FROM permissoes_usuario WHERE usuario_id = $1 AND empresa_id = $2 AND modulo = $3`,
             [id, empresaResolvida.id, modulo]
           );
         } else {
-          await pool.query(
+          await permissionClient.query(
             `INSERT INTO permissoes_usuario (usuario_id, empresa_id, modulo, pode_ver, pode_criar, pode_editar, pode_deletar)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (usuario_id, empresa_id, modulo)
@@ -445,6 +455,14 @@ module.exports = function usuariosRoutes({
           );
         }
       }
+      await permissionClient.query(`UPDATE usuarios SET senha_alterada_em = NOW()
+        WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,
+        [id, empresaResolvida.id, empresaResolvida.nome]);
+      await permissionClient.query('COMMIT');
+      } catch (error) {
+        await permissionClient.query('ROLLBACK');
+        throw error;
+      } finally { permissionClient.release(); }
 
       await registrarAuditoria({
         empresa: empresaResolvida.nome,

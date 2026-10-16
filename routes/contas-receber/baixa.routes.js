@@ -13,6 +13,14 @@ module.exports = function contasReceberBaixaRoutes({
   registrarLogFinanceiro
 }) {
   const router = express.Router();
+  async function empresaDaConta(req, conta, client) {
+    if (!req.user?.is_saas_owner) {
+      return { id: req.user.empresa_id || conta.empresa_id, nome: req.user.empresa || conta.empresa };
+    }
+    const r = await client.query(`SELECT id, nome FROM empresas
+      WHERE id = $1 OR ($1::int IS NULL AND nome = $2) LIMIT 1`, [conta.empresa_id, conta.empresa]);
+    return r.rows[0] || null;
+  }
 
   router.post('/contas-receber/pagar/:id', auth, writeRateLimiter, requirePermissao(pool, 'financeiro', 'editar'), async (req, res) => {
     const id = Number(req.params.id);
@@ -39,7 +47,7 @@ module.exports = function contasReceberBaixaRoutes({
       }
 
       const conta = contaResult.rows[0];
-      const empresaResolvida = await validarAcessoEmpresa(req, conta.empresa, conta.empresa_id);
+      const empresaResolvida = await empresaDaConta(req, conta, client);
 
       if (!empresaResolvida) {
         await client.query('ROLLBACK');
@@ -228,7 +236,7 @@ module.exports = function contasReceberBaixaRoutes({
       }
 
       const conta = contaResult.rows[0];
-      const empresaResolvida = await validarAcessoEmpresa(req, conta.empresa, conta.empresa_id);
+      const empresaResolvida = await empresaDaConta(req, conta, client);
 
       if (!empresaResolvida) {
         await client.query('ROLLBACK');
@@ -368,7 +376,7 @@ module.exports = function contasReceberBaixaRoutes({
       }
 
       const conta = contaResult.rows[0];
-      const empresaResolvida = await validarAcessoEmpresa(req, conta.empresa, conta.empresa_id);
+      const empresaResolvida = await empresaDaConta(req, conta, client);
 
       if (!empresaResolvida) {
         await client.query('ROLLBACK');

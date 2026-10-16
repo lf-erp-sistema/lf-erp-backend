@@ -1,7 +1,16 @@
 'use strict';
+const crypto = require('crypto');
 
 function createSharedRateLimiter(pool) {
+  async function cleanup() {
+    await pool.query(`DELETE FROM rate_limit_buckets WHERE bucket_key IN (
+      SELECT bucket_key FROM rate_limit_buckets WHERE updated_at < NOW() - INTERVAL '48 hours'
+      ORDER BY updated_at LIMIT 1000)`);
+  }
+  const cleanupTimer = setInterval(() => cleanup().catch(error => console.error('[rate-limit] limpeza:', error.message)), 15 * 60_000);
+  cleanupTimer.unref();
   async function consume(bucketKey, windowMs, limit) {
+    if (Buffer.byteLength(bucketKey) > 256) bucketKey = 'sha256:' + crypto.createHash('sha256').update(bucketKey).digest('hex');
     const result = await pool.query(
       `INSERT INTO rate_limit_buckets (bucket_key, window_started_at, request_count, updated_at)
        VALUES ($1, NOW(), 1, NOW())
@@ -40,7 +49,7 @@ function createSharedRateLimiter(pool) {
     };
   }
 
-  return { consume, middleware };
+  return { consume, middleware, cleanup };
 }
 
 module.exports = { createSharedRateLimiter };

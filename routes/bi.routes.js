@@ -339,9 +339,9 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, hoje, requirePerm
       if (fim)    { params.push(fim);    dataCond += ` AND criado_em::date <= $${params.length}`; }
 
       const [orcRes, pedRes, vendasRes] = await Promise.all([
-        pool.query(`SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS valor FROM orcamentos WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2)) ${dataCond}`, params).catch(() => ({ rows: [{ total: 0, valor: 0 }] })),
-        pool.query(`SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS valor FROM pedidos WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2)) ${dataCond}`, params).catch(() => ({ rows: [{ total: 0, valor: 0 }] })),
-        pool.query(`SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS valor FROM vendas WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2)) AND status != 'cancelada' ${dataCond}`, params).catch(() => ({ rows: [{ total: 0, valor: 0 }] }))
+        pool.query(`SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS valor FROM orcamentos WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2)) ${dataCond}`, params),
+        pool.query(`SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS valor FROM pedidos WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2)) ${dataCond}`, params),
+        pool.query(`SELECT COUNT(*) AS total, COALESCE(SUM(total),0) AS valor FROM vendas WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $2)) AND status != 'cancelada' ${dataCond}`, params)
       ]);
 
       const etapas = [
@@ -422,6 +422,8 @@ module.exports = function ({ auth, pool, validarAcessoEmpresa, hoje, requirePerm
           GROUP BY vi.produto_nome ORDER BY receita DESC LIMIT 5`, [e.id])
       ]);
 
+      const falhaConsulta = [compR, tendR, atrasoR, estoqueR, topProdR].find(r => r.status === 'rejected');
+      if (falhaConsulta) throw falhaConsulta.reason;
       const safeRows = (r) => r.status === 'fulfilled' ? r.value.rows : [];
 
       const hojeStr  = hoje();
@@ -508,14 +510,6 @@ Máximo 200 palavras. Use os números reais fornecidos acima.`;
       const e = await emp(req);
       if (!e) return erro(res, 403, 'Sem acesso');
 
-      const baseUrl = req.protocol + '://' + req.get('host');
-      const q = new URLSearchParams(req.query).toString();
-
-      const [tendencia, comparativo, topProdutos, topClientes, mixPag, margemCat, funil] = await Promise.allSettled([
-        pool.query(`SELECT TO_CHAR(DATE_TRUNC('month',data::date),'YYYY-MM') AS mes, COUNT(*) AS qtd_vendas, COALESCE(SUM(total),0) AS receita FROM vendas WHERE (empresa_id=$1 OR (empresa_id IS NULL AND empresa=$2)) AND data::date >= (CURRENT_DATE - '12 months'::interval)::date GROUP BY 1 ORDER BY 1`, [e.id, e.nome]),
-        null, null, null, null, null, null
-      ]);
-
       // Dispara todas as queries em paralelo
       const [t, comp, tp, tc, mp, mc, fn] = await Promise.allSettled([
         // tendencia
@@ -532,12 +526,14 @@ Máximo 200 palavras. Use os números reais fornecidos acima.`;
         pool.query(`SELECT COALESCE(p.categoria,'Sem categoria') AS categoria, COALESCE(SUM(vi.total),0) AS receita, COALESCE(SUM(vi.quantidade*COALESCE(vi.custo_unitario,0)),0) AS custo FROM venda_itens vi JOIN vendas v ON v.id=vi.venda_id LEFT JOIN produtos p ON p.id=vi.produto_id WHERE (vi.empresa_id=$1 OR (vi.empresa_id IS NULL AND vi.empresa=$2)) AND v.data::date >= CURRENT_DATE-INTERVAL '30 days' GROUP BY categoria ORDER BY receita DESC`, [e.id, e.nome]),
         // funil
         Promise.all([
-          pool.query(`SELECT COUNT(*) AS total FROM orcamentos WHERE (empresa_id=$1 OR (empresa_id IS NULL AND empresa=$2)) AND criado_em >= CURRENT_DATE-INTERVAL '30 days'`, [e.id, e.nome]).catch(()=>({rows:[{total:0}]})),
-          pool.query(`SELECT COUNT(*) AS total FROM pedidos    WHERE (empresa_id=$1 OR (empresa_id IS NULL AND empresa=$2)) AND criado_em >= CURRENT_DATE-INTERVAL '30 days'`, [e.id, e.nome]).catch(()=>({rows:[{total:0}]})),
-          pool.query(`SELECT COUNT(*) AS total FROM vendas     WHERE (empresa_id=$1 OR (empresa_id IS NULL AND empresa=$2)) AND criado_em >= CURRENT_DATE-INTERVAL '30 days'`, [e.id, e.nome]).catch(()=>({rows:[{total:0}]}))
+          pool.query(`SELECT COUNT(*) AS total FROM orcamentos WHERE (empresa_id=$1 OR (empresa_id IS NULL AND empresa=$2)) AND criado_em >= CURRENT_DATE-INTERVAL '30 days'`, [e.id, e.nome]),
+          pool.query(`SELECT COUNT(*) AS total FROM pedidos    WHERE (empresa_id=$1 OR (empresa_id IS NULL AND empresa=$2)) AND criado_em >= CURRENT_DATE-INTERVAL '30 days'`, [e.id, e.nome]),
+          pool.query(`SELECT COUNT(*) AS total FROM vendas     WHERE (empresa_id=$1 OR (empresa_id IS NULL AND empresa=$2)) AND criado_em >= CURRENT_DATE-INTERVAL '30 days'`, [e.id, e.nome])
         ])
       ]);
 
+      const falha = [t, comp, tp, tc, mp, mc, fn].find(result => result.status === 'rejected');
+      if (falha) throw falha.reason;
       const safe = (r, map) => r.status === 'fulfilled' ? (map ? r.value.rows.map(map) : r.value.rows) : [];
       const safeVal = (r, key, def = []) => r.status === 'fulfilled' ? r.value[key] || def : def;
 

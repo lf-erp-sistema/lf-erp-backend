@@ -225,31 +225,36 @@ module.exports = function authRoutes({
   });
 
   // ── POST /auth/logout (e alias /logout para retrocompatibilidade) ──────────
-  router.post(['/auth/logout', '/logout'], auth, (req, res) => {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
-    if (token) {
-      const hash = _tokenHash(token);
-      tokenBlacklist.set(hash, Date.now());
-      const expiresAt = new Date(Date.now() + JWT_EXPIRY_MS).toISOString();
-      pool.query(
-        `INSERT INTO jwt_blacklist (token_hash, revoked_at, expires_at)
-         VALUES ($1, NOW(), $2) ON CONFLICT DO NOTHING`,
-        [hash, expiresAt]
-      ).catch((e) => console.error('[logout] Falha ao invalidar token:', e));
+  router.post(['/auth/logout', '/logout'], auth, async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
+      if (token) {
+        const hash = _tokenHash(token);
+        tokenBlacklist.set(hash, Date.now());
+        const expiresAt = new Date(Date.now() + JWT_EXPIRY_MS).toISOString();
+        await pool.query(
+          `INSERT INTO jwt_blacklist (token_hash, revoked_at, expires_at)
+           VALUES ($1, NOW(), $2) ON CONFLICT DO NOTHING`,
+          [hash, expiresAt]
+        );
+      }
+
+      registrarAuditoria({
+        empresa: req.empresa_nome || null,
+        empresa_id: req.empresa_id || null,
+        usuario_id: req.user.id,
+        usuario_nome: req.user.nome_completo || req.user.usuario,
+        modulo: 'acesso',
+        acao: 'logout',
+        req
+      });
+
+      res.json({ sucesso: true });
+    } catch (error) {
+      console.error('[logout] revogação não persistida:', error.message);
+      jsonErro(res, 503, 'Não foi possível concluir a revogação da sessão. Tente novamente.');
     }
-
-    registrarAuditoria({
-      empresa: req.empresa_nome || null,
-      empresa_id: req.empresa_id || null,
-      usuario_id: req.user.id,
-      usuario_nome: req.user.nome_completo || req.user.usuario,
-      modulo: 'acesso',
-      acao: 'logout',
-      req
-    });
-
-    res.json({ sucesso: true });
   });
 
   // ── PUT /me/perfil ─────────────────────────────────────────────────────────

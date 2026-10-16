@@ -10,10 +10,10 @@
     "test:smoke": "node test/validate.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
+    "jest": "^30.5.2",
     "supertest": "^7.2.2"
   },
   "dependencies": {
@@ -24,12 +24,17 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.22.3",
+    "ipaddr.js": "^2.5.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.4.0",
     "nodemailer": "^10.1.0",
-    "pg": "^8.11.5"
+    "pg": "^8.11.5",
+    "undici": "^8.12.2"
   },
   "overrides": {
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^4.1.1"
+    },
     "body-parser": "1.20.8",
     "proxy-addr": "2.0.8",
     "qs": "6.16.0"

@@ -86,7 +86,8 @@ router.post('/conciliacao/importar', auth, writeRateLimiter, requirePermissao(po
     if (!podeGerenciarFinanceiro(req)) return jsonErro(res, 403, 'Acesso restrito a administradores e gerentes');
     const { conteudo, tipo, nome, conta } = req.body;
     if (!conteudo || !tipo || !nome) return jsonErro(res, 400, 'Campos obrigatórios: conteudo, tipo, nome');
-    if (typeof conteudo === 'string' && conteudo.length > 5 * 1024 * 1024) return jsonErro(res, 400, 'Arquivo muito grande (máximo 5 MB)');
+    if (typeof conteudo !== 'string') return jsonErro(res, 400, 'Conteúdo do arquivo inválido');
+    if (Buffer.byteLength(conteudo, 'utf8') > 5 * 1024 * 1024) return jsonErro(res, 400, 'Arquivo muito grande (máximo 5 MB)');
 
     const empresaResolvida = await validarAcessoEmpresa(req, req.body.empresa);
     if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');

@@ -74,9 +74,15 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
       if (decoded.tipo !== 'cliente') return erro(res, 403, 'Acesso não autorizado');
 
       // Verificar portal_ativo a cada request para respeitar revogação imediata
-      const check = await pool.query(`SELECT portal_ativo FROM clientes WHERE id = $1`, [decoded.id]);
+      const check = await pool.query(`SELECT portal_ativo, portal_senha_alterada_em FROM clientes
+        WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3)) AND deletado_em IS NULL`,
+        [decoded.id, decoded.empresa_id, decoded.empresa_nome || '']);
       if (!check.rowCount || !check.rows[0].portal_ativo) {
         return erro(res, 403, 'Acesso ao portal desativado');
+      }
+      const versao = check.rows[0].portal_senha_alterada_em;
+      if (versao && new Date(versao).getTime() > Number(decoded.senha_v || 0)) {
+        return erro(res, 403, 'Senha alterada. Faça login novamente.');
       }
 
       req.cliente = decoded;
@@ -163,7 +169,8 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
           tipo:         'cliente',
           nome:         cliente.nome,
           empresa_id:   cliente.empresa_id,
-          empresa_nome: cliente.empresa_nome
+          empresa_nome: cliente.empresa_nome,
+          senha_v: cliente.portal_senha_alterada_em ? new Date(cliente.portal_senha_alterada_em).getTime() : 0
         },
         PORTAL_SECRET,
         { expiresIn: '12h', algorithm: 'HS256' }
@@ -311,7 +318,7 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
 
       const r = await pool.query(
         `UPDATE clientes
-         SET senha_portal = $1, portal_ativo = true, atualizado_em = NOW()
+         SET senha_portal = $1, portal_senha_alterada_em = NOW(), portal_ativo = true, atualizado_em = NOW()
          WHERE id = $2
            AND (empresa_id = $3 OR (empresa_id IS NULL AND empresa = $4))
          RETURNING id, nome, portal_ativo`,

@@ -232,6 +232,17 @@ describe('POST /auth/refresh', () => {
 });
 
 describe('POST /auth/logout', () => {
+  test('não anuncia sucesso antes de persistir e retorna 503 se a gravação falhar', async () => {
+    let reject;
+    const pool = { query: jest.fn().mockReturnValue(new Promise((resolve, no) => { reject = no; })) };
+    const router = buildRouter(pool);
+    const response = mockRes();
+    const pending = getHandler(router, 'post', '/auth/logout')({ headers: { authorization: 'Bearer teste' }, user: { id: 1 } }, response);
+    expect(response.jsonBody).toBeNull();
+    reject(new Error('offline')); await pending;
+    expect(response.statusCode).toBe(503);
+    expect(response.jsonBody.sucesso).toBe(false);
+  });
   test('revoga o token (blacklist em memória + banco) e audita logout', async () => {
     const pool = { query: jest.fn().mockResolvedValue({}) };
     const tokenBlacklist = new Map();
