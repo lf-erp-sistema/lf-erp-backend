@@ -33,13 +33,14 @@ router.get('/admin/smtp/config', auth, apenasAdmin, async (req, res) => {
 router.put('/admin/smtp/config', auth, apenasAdmin, writeRateLimiter, async (req, res) => {
   try {
     const { smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, app_url } = req.body;
+    const smtpPassParam = (smtp_pass && smtp_pass !== '***') ? encryptField(smtp_pass) : null;
     await pool.query(
       `UPDATE saas_config SET
          smtp_host = $1, smtp_port = $2, smtp_user = $3,
-         smtp_pass = COALESCE(NULLIF($4,'***'), smtp_pass),
+         smtp_pass = COALESCE($4, smtp_pass),
          smtp_from = $5, app_url = $6, atualizado_em = NOW()`,
       [smtp_host || null, Number(smtp_port || 587), smtp_user || null,
-       smtp_pass || null, smtp_from || null, app_url || null]
+       smtpPassParam, smtp_from || null, app_url || null]
     );
     res.json({ sucesso: true });
   } catch (err) {

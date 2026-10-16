@@ -4,6 +4,7 @@
  */
 
 const nodemailer = require('nodemailer');
+const { decryptField } = require('./pixCrypto');
 
 // Timeouts conservadores e configuráveis por ambiente — sem eles, o Nodemailer usa
 // defaults bem mais longos (connectionTimeout 2min, greetingTimeout 30s, socketTimeout
@@ -18,7 +19,9 @@ async function getSaasSmtp(pool) {
     `SELECT smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, app_url
      FROM saas_config LIMIT 1`
   );
-  return r.rows[0] || {};
+  const cfg = r.rows[0] || {};
+  if (cfg.smtp_pass) cfg.smtp_pass = decryptField(cfg.smtp_pass);
+  return cfg;
 }
 
 function criarTransporter(cfg) {

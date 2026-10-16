@@ -14,6 +14,7 @@ const { emitirNfce, consultarNfce, cancelarNfce, downloadDanfce } = require('../
 const { montarPayloadNfce } = require('../utils/nfce_builder');
 const { randomUUID } = require('crypto');
 const { erro, ok } = require('../utils/routeHelpers');
+const { decryptField } = require('../utils/pixCrypto');
 
 module.exports = ({
   auth,
@@ -29,7 +30,9 @@ module.exports = ({
 
   async function obterConfigNfe(empresaId) {
     const r = await pool.query(`SELECT * FROM nfe_config WHERE empresa_id = $1`, [empresaId]);
-    return r.rows[0] || null;
+    const config = r.rows[0] || null;
+    if (config?.token_focusnfe) config.token_focusnfe = decryptField(config.token_focusnfe);
+    return config;
   }
 
   async function obterEmpresa(empresaId) {
