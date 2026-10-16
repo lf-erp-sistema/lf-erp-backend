@@ -32,7 +32,7 @@ jobs:
             node --check "$f"
           done
 
-      - name: Run smoke tests
+      - name: Run Jest test suite
         run: npm test
 
       - name: Dependency audit

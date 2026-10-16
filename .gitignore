@@ -1,4 +1,3 @@
 node_modules
 loja.db
 .env
-server.backup.js
