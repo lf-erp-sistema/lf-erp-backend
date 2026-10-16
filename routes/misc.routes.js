@@ -87,11 +87,11 @@ router.get('/compras/:empresa', auth, requirePermissao(pool, 'compras', 'ver'), 
 
 router.delete('/compras/:id', auth, writeRateLimiter, requirePermissao(pool, 'compras', 'deletar'), async (req, res) => {
   if (!podeGerenciarCompras(req)) {
-    return jsonErro(res, 403, 'Sem permissÃ£o para excluir compras');
+    return jsonErro(res, 403, 'Sem permissão para excluir compras');
   }
 
   const id = Number(req.params.id);
-  if (!id) return jsonErro(res, 400, 'Compra invÃ¡lida');
+  if (!id) return jsonErro(res, 400, 'Compra inválida');
 
   const client = await pool.connect();
 
@@ -114,7 +114,7 @@ router.delete('/compras/:id', auth, writeRateLimiter, requirePermissao(pool, 'co
 
     if (compraResult.rowCount === 0) {
       await client.query('ROLLBACK');
-      return jsonErro(res, 404, 'Compra nÃ£o encontrada');
+      return jsonErro(res, 404, 'Compra não encontrada');
     }
 
     const itensResult = await client.query(
@@ -208,7 +208,7 @@ router.get('/compras-detalhe/:id', auth, requirePermissao(pool, 'compras', 'ver'
     );
 
     if (compraResult.rowCount === 0) {
-      return jsonErro(res, 404, 'Compra nÃ£o encontrada');
+      return jsonErro(res, 404, 'Compra não encontrada');
     }
 
     const compra = compraResult.rows[0];
