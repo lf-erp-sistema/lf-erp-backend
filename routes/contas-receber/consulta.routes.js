@@ -127,11 +127,9 @@ module.exports = function contasReceberConsultaRoutes({
         return jsonErro(res, 403, 'Sem acesso');
       }
 
-      try {
-        await atualizarStatusContasReceberPorEmpresa(empresaResolvida.nome, empresaResolvida.id);
-      } catch (statusErr) {
-        console.error('[status-cr] Erro não-crítico ao atualizar status:', statusErr.message);
-      }
+      // status_exibicao já calcula os atrasos pela data atual. A consulta mensal
+      // não precisa aguardar a atualização de todos os títulos da empresa.
+      // A persistência dos status continua nas escritas e na rotina noturna.
 
       const status = (req.query.status || '').trim().toLowerCase();
       const cliente = (req.query.cliente || '').trim().toLowerCase();
