@@ -50,11 +50,9 @@ router.get('/contas-pagar/:empresa', auth, requirePermissao(pool, 'financeiro', 
       return jsonErro(res, 403, 'Sem acesso');
     }
 
-    try {
-      await atualizarStatusContasPagarPorEmpresa(empresaResolvida.nome, empresaResolvida.id);
-    } catch (statusErr) {
-      console.error('[status-cp] Erro não-crítico ao atualizar status:', statusErr.message);
-    }
+    // A listagem calcula status_exibicao pela data atual. Não precisa aguardar
+    // uma transação de atualização de todos os títulos da empresa a cada filtro.
+    // A persistência dos status continua na rotina noturna e nas operações de escrita.
 
     const status = (req.query.status || '').trim().toLowerCase();
     const fornecedor = (req.query.fornecedor || '').trim().toLowerCase();
