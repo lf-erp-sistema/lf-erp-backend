@@ -34,46 +34,34 @@ const PORTAL_SECRET = SECRET + '_portal_v1';
 
 const { requirePermissao } = require('../utils/permissoes');
 const { erro, ok } = require('../utils/routeHelpers');
+const { createSharedRateLimiter } = require('../utils/sharedRateLimiter');
 
 module.exports = ({ auth, writeRateLimiter, pool }) => {
   const router = require('express').Router();
 
-
+  // Rate limiters do portal — antes eram Maps em memória do processo
+  // (zeravam a cada deploy/restart e, com múltiplas instâncias, multiplicavam
+  // o limite efetivo); agora usam o mesmo limiter compartilhado via banco já
+  // usado pelo login principal do ERP e pelos webhooks (achado A2-SEC-004,
+  // Auditoria de Segurança 2026-10-16). Mesmos limites de antes.
+  const _sharedLimiter = createSharedRateLimiter(pool);
 
   // ── Rate limiter por IP para login do portal (10 req/min) ─────────────────
-  const _portalLoginBuckets = new Map();
-  const PORTAL_LOGIN_MAP_MAX = 10000;
-  function portalLoginRateLimiter(req, res, next) {
-    const key = req.ip || 'unknown';
-    const now = Date.now();
-    const bucket = _portalLoginBuckets.get(key) || { count: 0, resetAt: now + 60_000 };
-    if (now > bucket.resetAt) { bucket.count = 0; bucket.resetAt = now + 60_000; }
-    bucket.count++;
-    _portalLoginBuckets.set(key, bucket);
-    if (_portalLoginBuckets.size > PORTAL_LOGIN_MAP_MAX) {
-      for (const [k, b] of _portalLoginBuckets) { if (Date.now() > b.resetAt) _portalLoginBuckets.delete(k); }
-    }
-    if (bucket.count > 10) return erro(res, 429, 'Muitas tentativas. Aguarde 1 minuto.');
-    next();
-  }
+  const portalLoginRateLimiter = _sharedLimiter.middleware({
+    key: (req) => `portal:login:${req.ip || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 10,
+    message: 'Muitas tentativas. Aguarde 1 minuto.',
+  });
 
   // ── Rate limiter por cliente para consultas do portal (60 req/min) ────────
   // Protege contra scraping de dados financeiros caso um token JWT seja comprometido
-  const _portalConsultaBuckets = new Map();
-  const PORTAL_CONSULTA_MAP_MAX = 10000;
-  function portalConsultaRateLimiter(req, res, next) {
-    const key = req.cliente?.id || req.ip || 'unknown';
-    const now = Date.now();
-    const bucket = _portalConsultaBuckets.get(key) || { count: 0, resetAt: now + 60_000 };
-    if (now > bucket.resetAt) { bucket.count = 0; bucket.resetAt = now + 60_000; }
-    bucket.count++;
-    _portalConsultaBuckets.set(key, bucket);
-    if (_portalConsultaBuckets.size > PORTAL_CONSULTA_MAP_MAX) {
-      for (const [k, b] of _portalConsultaBuckets) { if (Date.now() > b.resetAt) _portalConsultaBuckets.delete(k); }
-    }
-    if (bucket.count > 60) return erro(res, 429, 'Muitas requisições. Aguarde 1 minuto.');
-    next();
-  }
+  const portalConsultaRateLimiter = _sharedLimiter.middleware({
+    key: (req) => `portal:consulta:${req.cliente?.id || req.ip || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 60,
+    message: 'Muitas requisições. Aguarde 1 minuto.',
+  });
 
   // ── Middleware exclusivo para tokens de cliente ───────────────────────────
   async function authCliente(req, res, next) {
@@ -143,13 +131,26 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
         return erro(res, 401, 'Credenciais inválidas');
       }
 
-      if (result.rowCount > 1) {
+      // A desambiguação "CPF/CNPJ em mais de uma empresa" (409) ficava ANTES
+      // de qualquer verificação de senha — um atacante descobria, sem senha
+      // nenhuma, se aquele documento era cliente em mais de uma empresa do
+      // SaaS (vazamento de metadado cross-tenant). Agora só revela a
+      // ambiguidade depois de confirmar que a senha bate com pelo menos um
+      // dos candidatos (achado A2-SEC-003, Auditoria de Segurança 2026-10-16).
+      const candidatosAutenticados = [];
+      for (const candidato of result.rows) {
+        if (await bcrypt.compare(senha, candidato.senha_portal)) candidatosAutenticados.push(candidato);
+      }
+
+      if (candidatosAutenticados.length === 0) {
+        return erro(res, 401, 'Credenciais inválidas');
+      }
+
+      if (candidatosAutenticados.length > 1) {
         return erro(res, 409, 'CPF/CNPJ registrado em mais de uma empresa. Informe o campo empresa_id.');
       }
 
-      const cliente = result.rows[0];
-      const senhaOk = await bcrypt.compare(senha, cliente.senha_portal);
-      if (!senhaOk) return erro(res, 401, 'Credenciais inválidas');
+      const cliente = candidatosAutenticados[0];
 
       await pool.query(
         `UPDATE clientes SET portal_ultimo_acesso = NOW() AT TIME ZONE 'America/Fortaleza' WHERE id = $1`,
