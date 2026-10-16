@@ -54,7 +54,10 @@ function createFinanceiroOps(pool, { hoje, normalizarDecimal, normalizarInt, add
       await client.query(
         `
         UPDATE contas_receber
-        SET status = 'atrasado',
+        SET status = CASE
+              WHEN LOWER(COALESCE(status, 'pendente')) = 'parcial' THEN status
+              ELSE 'atrasado'
+            END,
             dias_atraso = GREATEST(($2::date - data_vencimento::date), 0),
             multa = ROUND((valor * $3)::numeric, 2),
             juros = ROUND((valor * $4 * GREATEST(($2::date - data_vencimento::date), 0))::numeric, 2),

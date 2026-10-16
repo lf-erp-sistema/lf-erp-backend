@@ -300,6 +300,19 @@ describe('atualizarStatusContasReceberPorEmpresa', () => {
     expect(sqls.some((s) => s.includes('ROLLBACK'))).toBe(false);
   });
 
+  test('UPDATE de atraso preserva status "parcial" (não sobrescreve para "atrasado") — B2-DATA-001', async () => {
+    const client = makeFakeClient(true);
+    const pool = makeFakePool(client);
+    const { atualizarStatusContasReceberPorEmpresa } = freshFinanceiroOps(pool);
+    await atualizarStatusContasReceberPorEmpresa('Loja E', 5);
+    const sqls = sqlsChamados(client);
+    const updateAtraso = sqls.find((s) => s.includes('UPDATE contas_receber') && s.includes("'pendente', 'atrasado', 'parcial'"));
+    expect(updateAtraso).toBeDefined();
+    // status só muda para 'atrasado' quando NÃO está 'parcial'; 'parcial' permanece 'parcial'
+    expect(updateAtraso).toMatch(/WHEN LOWER\(COALESCE\(status, 'pendente'\)\) = 'parcial' THEN status/);
+    expect(updateAtraso).toMatch(/ELSE 'atrasado'/);
+  });
+
   test('throttle: duas chamadas rápidas para a mesma empresa só abrem uma conexão', async () => {
     const client = makeFakeClient(true);
     const pool = makeFakePool(client);
