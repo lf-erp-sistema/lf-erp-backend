@@ -1,13 +1,14 @@
 'use strict';
 const express = require('express');
 const crypto = require('crypto');
-const { PLATAFORMAS_VALIDAS, webhookRateLimit, createMarketplaceHelpers } = require('./helpers');
+const { PLATAFORMAS_VALIDAS, createWebhookRateLimit, createMarketplaceHelpers } = require('./helpers');
 
 // Parte 4/4 de marketplace.routes.js (achado ARCH-01 da Auditoria 360, 2026-10-06):
 // recebimento de notificações de pedidos (sem auth JWT — autenticado por HMAC/x-signature).
 module.exports = function marketplaceWebhookRoutes(deps) {
   const { pool } = deps;
   const { getMlToken, processarPedidoML } = createMarketplaceHelpers(deps);
+  const webhookRateLimit = createWebhookRateLimit(pool);
   const router = express.Router();
 
   router.post('/webhook/:plataforma', webhookRateLimit, async (req, res) => {

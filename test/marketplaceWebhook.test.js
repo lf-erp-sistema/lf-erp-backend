@@ -3,9 +3,18 @@
 const express  = require('express');
 const request  = require('supertest');
 
-// Pool mínimo — testes não atingem o banco
+// Pool mínimo — testes não atingem o banco de negócio, mas o rate limiter
+// compartilhado (createWebhookRateLimit, C-INT-002) consulta rate_limit_buckets
+// em toda requisição; o mock precisa responder a essa query específica
+// permitindo a passagem (request_count baixo) antes de qualquer outra asserção.
 function buildPool() {
-  return { query: jest.fn() };
+  const query = jest.fn((sql) => {
+    if (typeof sql === 'string' && sql.includes('rate_limit_buckets')) {
+      return Promise.resolve({ rows: [{ request_count: 1, window_started_at: new Date() }] });
+    }
+    return Promise.resolve({ rows: [] });
+  });
+  return { query };
 }
 
 function buildApp() {
@@ -40,13 +49,16 @@ describe('webhook Shopee — fail closed', () => {
     expect(res.body.ok).toBe(false);
   });
 
-  test('não processa pedido nem consulta banco para payload Shopee', async () => {
+  test('não processa pedido nem consulta banco de negócio para payload Shopee', async () => {
     const { app, pool } = buildApp();
     await request(app)
       .post('/marketplace/webhook/shopee')
       .send({ topic: 'ORDER_STATUS_CHANGE' });
 
-    expect(pool.query).not.toHaveBeenCalled();
+    // Única query esperada é a do rate limiter compartilhado (toda requisição
+    // passa por ele antes da rota); nenhuma query de negócio (ex. gravar pedido)
+    const sqlsChamados = pool.query.mock.calls.map((c) => c[0]);
+    expect(sqlsChamados.every((sql) => String(sql).includes('rate_limit_buckets'))).toBe(true);
   });
 
   test('plataforma inválida retorna 400', async () => {

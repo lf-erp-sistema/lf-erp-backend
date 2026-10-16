@@ -1,6 +1,7 @@
 'use strict';
 const https = require('https');
 const { encryptField, decryptField } = require('../../utils/pixCrypto');
+const { createSharedRateLimiter } = require('../../utils/sharedRateLimiter');
 
 // Helpers compartilhados pelas rotas de marketplace.routes.js (achado ARCH-01 da
 // Auditoria 360, 2026-10-06) -- extraídos sem nenhuma alteração de lógica.
@@ -16,23 +17,18 @@ function safeDecrypt(v) {
   try { return decryptField(v); } catch { return v; }
 }
 
-// Rate limiter por IP para o endpoint de webhook (sem auth JWT)
-const _webhookIpMap = new Map();
-const WEBHOOK_MAX = 60;       // 60 notificações por janela
-const WEBHOOK_WINDOW = 60000; // 1 minuto
-
-function webhookRateLimit(req, res, next) {
-  const ip = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
-  const now = Date.now();
-  const entry = _webhookIpMap.get(ip) || { count: 0, start: now };
-  if (now - entry.start > WEBHOOK_WINDOW) { entry.count = 1; entry.start = now; }
-  else entry.count += 1;
-  if (_webhookIpMap.size > 2000) {
-    for (const [k, v] of _webhookIpMap) { if (now - v.start > WEBHOOK_WINDOW) _webhookIpMap.delete(k); }
-  }
-  _webhookIpMap.set(ip, entry);
-  if (entry.count > WEBHOOK_MAX) { res.status(429).json({ error: 'Too many requests' }); return; }
-  next();
+// Rate limiter por IP para o endpoint de webhook (sem auth JWT). Backed pelo
+// banco (rate_limit_buckets) em vez de um Map em memória do processo — um Map
+// local não protege corretamente se o backend rodar em mais de uma instância
+// (cada réplica teria seu próprio contador, multiplicando o limite real por N).
+// Mesmo padrão já usado em checkout.routes.js (C-INT-002).
+function createWebhookRateLimit(pool) {
+  return createSharedRateLimiter(pool).middleware({
+    key: (req) => `marketplace-webhook:${req.ip || req.connection?.remoteAddress || 'unknown'}`,
+    windowMs: 60_000,
+    limit: 60,
+    message: 'Too many requests',
+  });
 }
 
 function createMarketplaceHelpers({ pool, normalizarDecimal, normalizarInt, normalizarDataISO, hoje, registrarMovimentacaoEstoque }) {
@@ -336,6 +332,6 @@ function createMarketplaceHelpers({ pool, normalizarDecimal, normalizarInt, norm
 
 module.exports = {
   ML_BASE, ML_AUTH, ML_TOKEN_URL, PLATAFORMAS_VALIDAS, ML_TIMEOUT_MS,
-  safeDecrypt, webhookRateLimit,
+  safeDecrypt, createWebhookRateLimit,
   createMarketplaceHelpers
 };
