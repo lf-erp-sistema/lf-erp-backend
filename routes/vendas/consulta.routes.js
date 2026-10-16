@@ -153,6 +153,10 @@ module.exports = function vendasConsultaRoutes({
           *,
           CASE
             WHEN LOWER(COALESCE(status, 'pendente')) = 'pago' THEN 'pago'
+            WHEN LOWER(COALESCE(status, 'pendente')) = 'parcial'
+                 AND data_vencimento IS NOT NULL AND data_vencimento < $2
+            THEN 'parcial_atrasado'
+            WHEN LOWER(COALESCE(status, 'pendente')) = 'parcial' THEN 'parcial'
             WHEN data_vencimento IS NOT NULL AND data_vencimento < $2 THEN 'atrasado'
             ELSE COALESCE(status, 'pendente')
           END AS status_exibicao
