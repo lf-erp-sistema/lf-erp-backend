@@ -19,12 +19,18 @@ const bcrypt = require('bcrypt');
 const jwt    = require('jsonwebtoken');
 
 const SECRET        = process.env.JWT_SECRET;
-const PORTAL_SECRET = (SECRET || '') + '_portal_v1';
 const SALT_ROUNDS   = 10;
 
-if (!process.env.JWT_SECRET) {
-  console.error('[portal] FATAL: JWT_SECRET não configurado. Tokens gerados sem segredo.');
+// server.js já falha o boot (process.exit(1)) se JWT_SECRET estiver ausente ou
+// curta demais — este check é defesa em profundidade própria do módulo, para
+// este arquivo nunca depender silenciosamente de uma validação feita em outro
+// lugar. Sem ele, PORTAL_SECRET viraria a string fixa e pública '_portal_v1',
+// permitindo forjar token de portal de qualquer cliente/empresa (D-MULTI-001).
+if (!SECRET) {
+  console.error('[portal] FATAL: JWT_SECRET não configurado — tokens de portal não podem ser gerados com segurança.');
+  process.exit(1);
 }
+const PORTAL_SECRET = SECRET + '_portal_v1';
 
 const { requirePermissao } = require('../utils/permissoes');
 const { erro, ok } = require('../utils/routeHelpers');
