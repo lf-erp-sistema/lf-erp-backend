@@ -22,8 +22,11 @@ router.get('/metas-vendas', auth, requirePermissao(pool, 'relatorios', 'ver'), a
     if (/^\d{4}-\d{2}$/.test(periodo)) {
       // Mensal: YYYY-MM
       dataInicio = `${periodo}-01`;
-      const [y, m] = periodo.split('-').map(Number);
-      const fim = new Date(y, m, 0); // Ãºltimo dia do mÃªs
+      // Ancora ao meio-dia (mesmo padrão de addDias em normalizadores.js) para não
+      // sofrer off-by-one ao formatar em America/Fortaleza se o processo rodar em
+      // outro fuso (ex: UTC em container) — meia-noite local recuaria pro dia anterior.
+      const fim = new Date(`${periodo}-01T12:00:00`);
+      fim.setMonth(fim.getMonth() + 1, 0); // dia 0 do mês seguinte = último dia deste mês
       dataFim = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza' }).format(fim);
     } else {
       dataInicio = hoje().slice(0, 8) + '01';

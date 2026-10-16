@@ -61,14 +61,17 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normaliz
         calcularSaldo(sessao.id)
       ]);
 
-      // Vendas em dinheiro/pix no período para exibição (não modifica saldo)
+      // Vendas em dinheiro/pix no período para exibição (não modifica saldo).
+      // Usa criado_em (timestamp real do INSERT), mesma coluna que POST /fechar
+      // usa para apurar saldo_calculado — "data" é editável/retroativa e podia
+      // divergir do valor que o fechamento realmente usa (achado B-DATA-006).
       const vendasResult = await pool.query(
         `SELECT COALESCE(SUM(total), 0) AS total_vendas, COUNT(*) AS qtd_vendas
          FROM vendas
          WHERE (empresa_id = $1 OR (empresa_id IS NULL AND empresa = $3))
-           AND data >= $2::text
-           AND LOWER(pagamento) IN ('dinheiro','pix')`,
-        [emp.id, new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza' }).format(new Date(sessao.aberto_em)), emp.nome]
+           AND criado_em >= $2
+           AND LOWER(COALESCE(pagamento, 'dinheiro')) IN ('dinheiro','pix')`,
+        [emp.id, sessao.aberto_em, emp.nome]
       );
       const vendas = vendasResult.rows[0];
 
