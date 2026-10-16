@@ -195,6 +195,14 @@ module.exports = function usuariosRoutes({
         return jsonErro(res, 403, 'Apenas administradores podem promover um usuário a admin');
       }
 
+      // Guarda simétrica: a correção anterior só bloqueava promover ALGUÉM A
+      // admin; um gerente com a permissão concedida podia rebaixar/remover o
+      // nível de um admin já existente, quebrando a mesma hierarquia pelo
+      // lado contrário (achado A2-SEC-002, Auditoria de Segurança 2026-10-16).
+      if (atualResult.rows[0].tipo === 'admin' && tipo !== 'admin' && req.user.tipo !== 'admin' && !req.user.is_saas_owner) {
+        return jsonErro(res, 403, 'Apenas administradores podem rebaixar outro administrador');
+      }
+
       if (req.user.id === id && tipo !== atualResult.rows[0].tipo) {
         return jsonErro(res, 403, 'Você não pode alterar seu próprio nível de acesso');
       }
@@ -297,6 +305,13 @@ module.exports = function usuariosRoutes({
       }
 
       const usuarioExcluido = existe.rows[0];
+
+      // Mesma guarda simétrica do PUT (achado A2-SEC-002): um gerente com a
+      // permissão "usuarios.deletar" concedida não podia ser bloqueado de
+      // excluir o admin da própria empresa.
+      if (usuarioExcluido.tipo === 'admin' && req.user.tipo !== 'admin' && !req.user.is_saas_owner) {
+        return jsonErro(res, 403, 'Apenas administradores podem excluir outro administrador');
+      }
 
       await pool.query(
         `DELETE FROM usuarios WHERE id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3))`,

@@ -225,6 +225,28 @@ describe('PUT /usuarios/:id (editar)', () => {
     expect(res.statusCode).toBe(200);
   });
 
+  test('gerente (não-admin) tenta rebaixar um admin existente -> 403 — A2-SEC-002', async () => {
+    const pool = poolComUsuarioAtual({ tipo: 'admin' }); // alvo atual é admin
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'put', '/usuarios/:id')(
+      buildReq({ user: GERENTE, body: { ...buildReq().body, tipo: 'funcionario' } }),
+      res
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  test('admin consegue rebaixar outro admin -> 200 — A2-SEC-002', async () => {
+    const pool = poolComUsuarioAtual({ tipo: 'admin' });
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'put', '/usuarios/:id')(
+      buildReq({ body: { ...buildReq().body, tipo: 'funcionario' } }),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+  });
+
   test('usuário tenta alterar o próprio nível de acesso -> 403', async () => {
     const pool = poolComUsuarioAtual({ id: 5, tipo: 'admin' });
     const router = buildRouter(pool);
@@ -329,6 +351,37 @@ describe('DELETE /usuarios/:id (excluir)', () => {
     const chamada = registrarAuditoria.mock.calls[0][0];
     expect(chamada.acao).toBe('exclusao');
     expect(chamada.dados_anteriores).toEqual({ nome: 'Joao', usuario: 'joao', tipo: 'funcionario' });
+  });
+
+  test('gerente (não-admin) tenta excluir um admin -> 403, sem DELETE — A2-SEC-002', async () => {
+    const pool = {
+      query: jest.fn((sql) => {
+        if (sql.includes('SELECT id, nome_completo, usuario, tipo')) {
+          return Promise.resolve({ rowCount: 1, rows: [{ id: 7, nome_completo: 'Dono', usuario: 'dono', tipo: 'admin' }] });
+        }
+        return Promise.resolve({ rowCount: 1 });
+      }),
+    };
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'delete', '/usuarios/:id')(buildReq({ user: GERENTE }), res);
+    expect(res.statusCode).toBe(403);
+    expect(pool.query.mock.calls.some(([sql]) => sql.includes('DELETE FROM usuarios'))).toBe(false);
+  });
+
+  test('admin consegue excluir outro admin -> 200 — A2-SEC-002', async () => {
+    const pool = {
+      query: jest.fn((sql) => {
+        if (sql.includes('SELECT id, nome_completo, usuario, tipo')) {
+          return Promise.resolve({ rowCount: 1, rows: [{ id: 7, nome_completo: 'Dono', usuario: 'dono', tipo: 'admin' }] });
+        }
+        return Promise.resolve({ rowCount: 1 });
+      }),
+    };
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'delete', '/usuarios/:id')(buildReq(), res);
+    expect(res.statusCode).toBe(200);
   });
 });
 
