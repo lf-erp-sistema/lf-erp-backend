@@ -1,5 +1,5 @@
 const { requirePermissao } = require('../utils/permissoes');
-const { erro, ok } = require('../utils/routeHelpers');
+const { erro, ok, createRequireFeatureHabilitada } = require('../utils/routeHelpers');
 
 module.exports = ({
   auth,
@@ -11,6 +11,11 @@ module.exports = ({
   normalizarDataISO
 }) => {
   const router = require('express').Router();
+
+  // Módulo legado sobre a mesma tabela de /assistencia/os — exige a mesma
+  // feature paga 'assistencia_tecnica' (achado D-SEC-003, Auditoria 2026-10-15:
+  // antes rodava sem nenhum feature-gate, contornando o controle de billing).
+  router.use(auth, createRequireFeatureHabilitada(pool));
 
   // ── Gera próximo número de OS para a empresa ─────────────────────────────
   async function gerarNumeroOS(empresaId, empresaNome) {
