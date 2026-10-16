@@ -12,11 +12,26 @@ function createInitDb(pool, { hoje, addDias, atualizarStatusContasReceberPorEmpr
     const ownerSenhaEnv = process.env.SAAS_OWNER_SENHA;
     if (!ownerSenhaEnv) return;
     try {
+      const atual = await pool.query(
+        `SELECT id, senha FROM usuarios WHERE LOWER(usuario) = 'lfelipeg' AND is_saas_owner = TRUE LIMIT 1`
+      );
+      const owner = atual.rows[0];
+      if (!owner) return;
+
+      // Só regrava (e só marca senha_alterada_em, que revoga sessões já
+      // emitidas — achado A2-SEC-001) quando a senha do env realmente difere
+      // da que já está em banco. bcrypt.hash() gera um salt novo a cada
+      // chamada, então regravar incondicionalmente aqui — que roda em todo
+      // boot/deploy — derrubaria a sessão do SaaS Owner a cada restart.
+      const senhaJaSincronizada = owner.senha
+        ? await bcrypt.compare(ownerSenhaEnv, owner.senha).catch(() => false)
+        : false;
+      if (senhaJaSincronizada) return;
+
       const ownerHash = await bcrypt.hash(ownerSenhaEnv, 10);
       await pool.query(
-        `UPDATE usuarios SET senha = $1, atualizado_em = NOW()
-         WHERE LOWER(usuario) = 'lfelipeg' AND is_saas_owner = TRUE`,
-        [ownerHash]
+        `UPDATE usuarios SET senha = $1, senha_alterada_em = NOW(), atualizado_em = NOW() WHERE id = $2`,
+        [ownerHash, owner.id]
       );
     } catch (e) {
       // Tabela `usuarios` pode ainda não existir num banco totalmente novo —

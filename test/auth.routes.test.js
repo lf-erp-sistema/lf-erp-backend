@@ -157,6 +157,25 @@ describe('POST /login', () => {
     expect(payload.is_saas_owner).toBe(false);
     expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ acao: 'login' }));
   });
+
+  test('token carrega senha_v: 0 quando usuário nunca trocou a senha (senha_alterada_em null) — A2-SEC-001', async () => {
+    const pool = { query: jest.fn().mockResolvedValue({ rowCount: 1, rows: [usuarioBase({ senha_alterada_em: null })] }) };
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'post', '/login')({ body: { usuario: 'ana', senha: 'correta' } }, res);
+    const payload = jwt.verify(res.jsonBody.token, SECRET);
+    expect(payload.senha_v).toBe(0);
+  });
+
+  test('token carrega senha_v igual ao timestamp de senha_alterada_em — A2-SEC-001', async () => {
+    const dataTroca = '2026-05-01T12:00:00.000Z';
+    const pool = { query: jest.fn().mockResolvedValue({ rowCount: 1, rows: [usuarioBase({ senha_alterada_em: dataTroca })] }) };
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'post', '/login')({ body: { usuario: 'ana', senha: 'correta' } }, res);
+    const payload = jwt.verify(res.jsonBody.token, SECRET);
+    expect(payload.senha_v).toBe(new Date(dataTroca).getTime());
+  });
 });
 
 describe('POST /auth/refresh', () => {
@@ -196,6 +215,19 @@ describe('POST /auth/refresh', () => {
     expect(res.statusCode).toBe(200);
     const payload = jwt.verify(res.jsonBody.dados.token, SECRET);
     expect(payload.id).toBe(1);
+  });
+
+  test('token renovado carrega senha_v atual do usuário — A2-SEC-001', async () => {
+    const dataTroca = '2026-05-01T12:00:00.000Z';
+    const pool = { query: jest.fn().mockResolvedValue({
+      rowCount: 1,
+      rows: [{ id: 1, usuario: 'ana', tipo: 'admin', is_saas_owner: false, empresa_id_real: 1, bloqueada: false, assinatura_status: 'ativo', senha_alterada_em: dataTroca }],
+    }) };
+    const router = buildRouter(pool);
+    const res = mockRes();
+    await getHandler(router, 'post', '/auth/refresh')({ user: { id: 1 } }, res);
+    const payload = jwt.verify(res.jsonBody.dados.token, SECRET);
+    expect(payload.senha_v).toBe(new Date(dataTroca).getTime());
   });
 });
 
@@ -271,6 +303,16 @@ describe('PUT /me/senha', () => {
     await getHandler(router, 'put', '/me/senha')(buildReq(), res);
     expect(res.statusCode).toBe(200);
     expect(registrarAuditoria).toHaveBeenCalledWith(expect.objectContaining({ acao: 'troca_senha' }));
+  });
+
+  test('sucesso: grava senha_alterada_em, revogando tokens já emitidos — A2-SEC-001', async () => {
+    const pool = { query: jest.fn().mockResolvedValue({ rowCount: 1, rows: [{ senha: '$2b$10$hash' }] }) };
+    const validarSenhaUsuario = jest.fn().mockResolvedValue(true);
+    const router = buildRouter(pool, { validarSenhaUsuario });
+    const res = mockRes();
+    await getHandler(router, 'put', '/me/senha')(buildReq(), res);
+    const updateCall = pool.query.mock.calls.find(([sql]) => sql.includes('UPDATE usuarios SET senha'));
+    expect(updateCall[0]).toContain('senha_alterada_em = NOW()');
   });
 });
 

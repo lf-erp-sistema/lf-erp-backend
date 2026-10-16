@@ -223,6 +223,7 @@ module.exports = function usuariosRoutes({
                 usuario = $2,
                 senha = $3,
                 tipo = $4,
+                senha_alterada_em = NOW(),
                 atualizado_em = NOW() AT TIME ZONE 'America/Fortaleza'
             WHERE id = $5 AND (empresa_id = $6 OR (empresa_id IS NULL AND empresa = $7))
             `,

@@ -105,8 +105,30 @@ function apenasAdmin(req, res, next) {
   next();
 }
 
+// Cache curto (TTL 30s) de usuarios.senha_alterada_em — usado pelo wrapper
+// `auth` de server.js para rejeitar tokens emitidos antes da última troca de
+// senha (achado A2-SEC-001, Auditoria de Segurança 2026-10-16), sem pagar uma
+// consulta ao banco em toda requisição autenticada.
+const _senhaAlteradaCache = new Map();
+const SENHA_CACHE_TTL_MS  = 30_000;
+
 // Retorna factory que recebe pool para manter assinatura validarSenhaUsuario(senha, user)
 function createAuthHelpers(pool) {
+  async function obterSenhaAlteradaEm(userId) {
+    const agora = Date.now();
+    const cached = _senhaAlteradaCache.get(userId);
+    if (cached && agora - cached.ts < SENHA_CACHE_TTL_MS) return cached.valor;
+    const r = await pool.query('SELECT senha_alterada_em FROM usuarios WHERE id = $1', [userId]);
+    const valor = r.rows[0]?.senha_alterada_em ? new Date(r.rows[0].senha_alterada_em).getTime() : 0;
+    if (_senhaAlteradaCache.size > 1000) {
+      for (const [k, v] of _senhaAlteradaCache) {
+        if (agora - v.ts > SENHA_CACHE_TTL_MS) _senhaAlteradaCache.delete(k);
+      }
+    }
+    _senhaAlteradaCache.set(userId, { ts: agora, valor });
+    return valor;
+  }
+
   async function validarSenhaUsuario(senhaInformada, user) {
     const senhaSalva = String(user?.senha || '');
     if (!senhaSalva) return false;
@@ -134,7 +156,7 @@ function createAuthHelpers(pool) {
     return false;
   }
 
-  return { validarSenhaUsuario };
+  return { validarSenhaUsuario, obterSenhaAlteradaEm };
 }
 
 function validarForcaSenha(senha) {

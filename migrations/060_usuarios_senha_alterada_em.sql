@@ -1,0 +1,14 @@
+-- Troca de senha não revogava sessões/JWTs já emitidos: um token roubado
+-- (XSS, log, dispositivo compartilhado) continuava válido e renovável via
+-- POST /auth/refresh indefinidamente, mesmo depois do usuário trocar a
+-- senha pelo fluxo normal (achado A2-SEC-001, Auditoria de Segurança
+-- 2026-10-16).
+--
+-- Esta coluna guarda o instante da última troca real de senha. O JWT passa
+-- a carregar esse valor (campo "senha_v") no momento da emissão; o
+-- middleware `auth` rejeita qualquer token cujo "senha_v" seja anterior ao
+-- valor atual em banco, forçando novo login. NULL (linhas existentes, nunca
+-- trocaram senha desde que esta coluna existe) é tratado como "0" nessa
+-- comparação — não invalida nenhum token já emitido no momento do deploy
+-- desta migration.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_alterada_em TIMESTAMP;

@@ -181,7 +181,7 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-const { validarSenhaUsuario } = createAuthHelpers(pool);
+const { validarSenhaUsuario, obterSenhaAlteradaEm } = createAuthHelpers(pool);
 
 const {
   obterEmpresaPorId, obterEmpresaPorNome, resolverEmpresaRequest,
@@ -201,6 +201,18 @@ const { obterPlanoEmpresa, validarLimitePlano, validarLimiteVendasMes } =
 async function auth(req, res, next) {
   authJwt(req, res, async () => {
     try {
+      // Troca de senha não revogava tokens já emitidos — um token roubado
+      // continuava válido e renovável via /auth/refresh indefinidamente,
+      // mesmo depois do usuário trocar a senha pelo fluxo normal (achado
+      // A2-SEC-001). Compara o instante da última troca real de senha
+      // (usuarios.senha_alterada_em, cache de 30s) com o "senha_v" gravado
+      // no token no momento em que foi emitido.
+      const senhaAtualEm = await obterSenhaAlteradaEm(req.user.id);
+      const tokenSenhaV  = Number(req.user.senha_v || 0);
+      if (senhaAtualEm > tokenSenhaV) {
+        return res.status(403).json({ sucesso: false, erro: 'Sessão expirada — a senha foi alterada. Faça login novamente.', codigo: 'SENHA_ALTERADA' });
+      }
+
       if (req.user?.is_saas_owner) return next();
 
       const plano = await obterPlanoEmpresa(req.empresa_id, req.empresa_nome);
@@ -213,7 +225,7 @@ async function auth(req, res, next) {
       }
       next();
     } catch (e) {
-      console.error('[auth] erro ao revalidar bloqueio/trial:', e.message);
+      console.error('[auth] erro ao revalidar bloqueio/trial/senha:', e.message);
       next(); // fail-open em falha de infra -- não derruba o sistema por erro de query
     }
   });

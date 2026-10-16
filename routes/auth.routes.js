@@ -122,7 +122,8 @@ module.exports = function authRoutes({
           nome_completo:    nomeCompleto,
           plano_codigo:     user.plano_codigo || null,
           plano_nome:       user.plano_nome || null,
-          assinatura_status: user.assinatura_status || null
+          assinatura_status: user.assinatura_status || null,
+          senha_v:          user.senha_alterada_em ? new Date(user.senha_alterada_em).getTime() : 0
         },
         SECRET,
         { expiresIn: '12h', algorithm: 'HS256' }
@@ -201,7 +202,8 @@ module.exports = function authRoutes({
           nome_completo:    u.nome_completo          || u.usuario,
           plano_codigo:     u.plano_codigo           || null,
           plano_nome:       u.plano_nome             || null,
-          assinatura_status: u.assinatura_status     || null
+          assinatura_status: u.assinatura_status     || null,
+          senha_v:          u.senha_alterada_em ? new Date(u.senha_alterada_em).getTime() : 0
         },
         SECRET,
         { expiresIn: '12h', algorithm: 'HS256' }
@@ -304,7 +306,7 @@ module.exports = function authRoutes({
 
       const hash = await bcrypt.hash(nova_senha, 10);
       await pool.query(
-        `UPDATE usuarios SET senha = $1, atualizado_em = NOW() AT TIME ZONE 'America/Fortaleza' WHERE id = $2`,
+        `UPDATE usuarios SET senha = $1, senha_alterada_em = NOW(), atualizado_em = NOW() AT TIME ZONE 'America/Fortaleza' WHERE id = $2`,
         [hash, req.user.id]
       );
 
