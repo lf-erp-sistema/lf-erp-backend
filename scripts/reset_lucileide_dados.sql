@@ -47,6 +47,7 @@ BEGIN
   BEGIN DELETE FROM marketplace_pedidos        WHERE empresa_id = emp_id; EXCEPTION WHEN undefined_table THEN NULL; END;
 
   -- Transações principais
+  BEGIN DELETE FROM comissoes WHERE empresa_id = emp_id; EXCEPTION WHEN undefined_table THEN NULL; END;
   DELETE FROM vendas        WHERE empresa_id = emp_id;
   DELETE FROM compras       WHERE empresa_id = emp_id;
   DELETE FROM conciliacoes  WHERE empresa_id = emp_id;
@@ -58,6 +59,11 @@ BEGIN
   BEGIN DELETE FROM caixa_movimentos WHERE empresa_id = emp_id; EXCEPTION WHEN undefined_table THEN NULL; END;
   BEGIN DELETE FROM caixa_sessoes    WHERE empresa_id = emp_id; EXCEPTION WHEN undefined_table THEN NULL; END;
   BEGIN DELETE FROM crm_oportunidades WHERE empresa_id = emp_id; EXCEPTION WHEN undefined_table THEN NULL; END;
+  -- ordens_servico CASCADEia ordens_servico_itens, at_checklist, at_eventos e
+  -- at_garantias (FKs ON DELETE CASCADE, migrations 044/047) — basta deletar a
+  -- tabela pai. at_aparelhos é entidade independente (sem FK formal pra OS).
+  BEGIN DELETE FROM ordens_servico WHERE empresa_id = emp_id; EXCEPTION WHEN undefined_table THEN NULL; END;
+  BEGIN DELETE FROM at_aparelhos   WHERE empresa_id = emp_id; EXCEPTION WHEN undefined_table THEN NULL; END;
 
   -- Financeiro (tabelas certamente existentes)
   DELETE FROM contas_receber          WHERE empresa_id = emp_id;
