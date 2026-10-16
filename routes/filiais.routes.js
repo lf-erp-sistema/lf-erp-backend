@@ -132,7 +132,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
 
       const [vendasRes, comprasRes, caixaRes] = await Promise.all([
         pool.query(`SELECT COUNT(*) AS qtd, COALESCE(SUM(total),0) AS total FROM vendas ${cond}${dv}`, pv),
-        pool.query(`SELECT COUNT(*) AS qtd, COALESCE(SUM(total),0) AS total FROM compras ${cond.replace(/\bdata\b/g,'data')}${dv}`, pv),
+        pool.query(`SELECT COUNT(*) AS qtd, COALESCE(SUM(total),0) AS total FROM compras ${cond}${dv}`, pv),
         pool.query(
           `SELECT COALESCE(SUM(CASE WHEN tipo='entrada' THEN valor ELSE 0 END),0) AS entradas,
                   COALESCE(SUM(CASE WHEN tipo='saida'   THEN valor ELSE 0 END),0) AS saidas
