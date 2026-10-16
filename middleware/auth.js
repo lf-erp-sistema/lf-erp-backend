@@ -81,7 +81,7 @@ function auth(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, SECRET);
+    const decoded = jwt.verify(token, SECRET, { algorithms: ['HS256'] });
     req.user = decoded;
     req.empresa_id   = decoded.empresa_id != null ? Number(decoded.empresa_id) : null;
     req.empresa_nome = decoded.empresa_nome || decoded.empresa || null;

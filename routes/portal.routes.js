@@ -76,7 +76,7 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
     if (!token) return erro(res, 403, 'Sem acesso');
 
     try {
-      const decoded = jwt.verify(token, PORTAL_SECRET);
+      const decoded = jwt.verify(token, PORTAL_SECRET, { algorithms: ['HS256'] });
       if (decoded.tipo !== 'cliente') return erro(res, 403, 'Acesso não autorizado');
 
       // Verificar portal_ativo a cada request para respeitar revogação imediata
@@ -159,7 +159,7 @@ module.exports = ({ auth, writeRateLimiter, pool }) => {
           empresa_nome: cliente.empresa_nome
         },
         PORTAL_SECRET,
-        { expiresIn: '12h' }
+        { expiresIn: '12h', algorithm: 'HS256' }
       );
 
       return ok(res, {

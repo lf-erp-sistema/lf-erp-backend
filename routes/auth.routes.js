@@ -125,7 +125,7 @@ module.exports = function authRoutes({
           assinatura_status: user.assinatura_status || null
         },
         SECRET,
-        { expiresIn: '12h' }
+        { expiresIn: '12h', algorithm: 'HS256' }
       );
 
       registrarAuditoria({
@@ -204,7 +204,7 @@ module.exports = function authRoutes({
           assinatura_status: u.assinatura_status     || null
         },
         SECRET,
-        { expiresIn: '12h' }
+        { expiresIn: '12h', algorithm: 'HS256' }
       );
       res.json({ sucesso: true, dados: { token: novoToken, authToken: novoToken } });
     } catch (error) {
@@ -604,7 +604,7 @@ module.exports = function authRoutes({
           primeiro_acesso: true
         },
         SECRET,
-        { expiresIn: '12h' }
+        { expiresIn: '12h', algorithm: 'HS256' }
       );
 
       if (email) {
