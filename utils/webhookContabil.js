@@ -5,7 +5,7 @@
  */
 
 const crypto = require('crypto');
-const { validarUrlExterna: validarUrlWebhook } = require('./ssrfGuard');
+const { validarUrlExterna: validarUrlWebhook, fetchSeguro } = require('./ssrfGuard');
 
 function timestampFortaleza() {
   // Gera ISO 8601 com offset -03:00 (America/Fortaleza, sem horário de verão)
@@ -50,7 +50,7 @@ async function dispararWebhook(pool, empresaId, evento, dados) {
       .digest('hex');
   }
 
-  await fetch(webhook_url, {
+  await fetchSeguro(webhook_url, {
     method: 'POST',
     headers,
     body: payload,

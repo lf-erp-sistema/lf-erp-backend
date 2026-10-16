@@ -67,4 +67,33 @@ async function validarUrlExterna(urlStr) {
   return validarHostExterno(url.hostname);
 }
 
-module.exports = { hostBloqueado, validarHostExterno, validarUrlExterna };
+const MAX_REDIRECTS = 3;
+
+// fetch() seguro contra SSRF via redirect: o fetch nativo segue 3xx por padrão
+// sem revalidar o host de destino — um endpoint que passe na validação inicial
+// pode responder com um redirect para um IP interno. Aqui cada hop (incluindo
+// o primeiro) é revalidado por validarUrlExterna() antes de ser seguido, com
+// limite de redirecionamentos.
+async function fetchSeguro(urlStr, options = {}) {
+  let atual = urlStr;
+  for (let i = 0; i <= MAX_REDIRECTS; i++) {
+    if (!(await validarUrlExterna(atual))) {
+      const err = new Error('URL bloqueada por política de segurança (SSRF)');
+      err.ssrfBloqueado = true;
+      throw err;
+    }
+    const resp = await fetch(atual, { ...options, redirect: 'manual' });
+    if ([301, 302, 303, 307, 308].includes(resp.status)) {
+      const location = resp.headers.get('location');
+      if (!location) return resp;
+      atual = new URL(location, atual).toString();
+      continue;
+    }
+    return resp;
+  }
+  const err = new Error('Muitos redirecionamentos');
+  err.ssrfBloqueado = true;
+  throw err;
+}
+
+module.exports = { hostBloqueado, validarHostExterno, validarUrlExterna, fetchSeguro };

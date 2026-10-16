@@ -3,7 +3,7 @@
  * Suporta: Evolution API, Z-API, e fallback para link wa.me.
  */
 
-const { validarUrlExterna } = require('./ssrfGuard');
+const { validarUrlExterna, fetchSeguro } = require('./ssrfGuard');
 
 const TIMEOUT_MS = 12000;
 
@@ -47,7 +47,7 @@ async function enviarMensagem({ cfg, telefone, mensagem }) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-      const resp = await fetch(url, {
+      const resp = await fetchSeguro(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -77,7 +77,7 @@ async function enviarMensagem({ cfg, telefone, mensagem }) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-      const resp = await fetch(url, {
+      const resp = await fetchSeguro(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: num, message: mensagem }),

@@ -4,7 +4,7 @@
  */
 
 const crypto = require('crypto');
-const { validarUrlExterna } = require('./ssrfGuard');
+const { validarUrlExterna, fetchSeguro } = require('./ssrfGuard');
 
 const MAX_TENTATIVAS = 3;
 const TIMEOUT_MS     = 10000;
@@ -73,7 +73,7 @@ async function enviarWebhook({ pool, endpoint, evento, payload, tentativa }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    const resp = await fetch(endpoint.url, {
+    const resp = await fetchSeguro(endpoint.url, {
       method:  'POST',
       headers: {
         'Content-Type':    'application/json',

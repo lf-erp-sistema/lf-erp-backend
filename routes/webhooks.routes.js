@@ -21,6 +21,7 @@
 const crypto = require('crypto');
 const { requirePermissao } = require('../utils/permissoes');
 const { dispatchWebhook, enviarWebhook } = require('../utils/webhooks');
+const { validarUrlExterna } = require('../utils/ssrfGuard');
 const { erro, ok } = require('../utils/routeHelpers');
 
 const EVENTOS_DISPONIVEIS = [
@@ -146,17 +147,8 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa 
       const eventosValidos = eventos.filter((e) => EVENTOS_DISPONIVEIS.includes(e));
       if (eventosValidos.length === 0) return erro(res, 400, 'Nenhum evento válido selecionado');
 
-      let parsedUrl;
-      try { parsedUrl = new URL(url.trim()); } catch { return erro(res, 400, 'URL inválida'); }
-      if (!['http:', 'https:'].includes(parsedUrl.protocol)) return erro(res, 400, 'URL deve usar protocolo http ou https');
-      const h = parsedUrl.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-      if (/^(localhost|127\.|10\.|192\.168\.|0\.0\.0\.0|169\.254\.)/.test(h)
-        || /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-        || /^::1$/.test(h)
-        || /^::ffff:(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/i.test(h)
-        || /^(fc00:|fe80:)/i.test(h)
-        || h === 'metadata.google.internal') {
-        return erro(res, 400, 'URL aponta para endereço interno não permitido');
+      if (!(await validarUrlExterna(url.trim()))) {
+        return erro(res, 400, 'URL inválida ou aponta para endereço interno não permitido');
       }
 
       const result = await pool.query(
@@ -179,17 +171,8 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa 
       const { nome, url, eventos, secret, ativo } = req.body;
 
       if (url?.trim()) {
-        let pu;
-        try { pu = new URL(url.trim()); } catch { return erro(res, 400, 'URL inválida'); }
-        if (!['http:', 'https:'].includes(pu.protocol)) return erro(res, 400, 'URL deve usar protocolo http ou https');
-        const h = pu.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-        if (/^(localhost|127\.|10\.|192\.168\.|0\.0\.0\.0|169\.254\.)/.test(h)
-          || /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-          || /^::1$/.test(h)
-          || /^::ffff:(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/i.test(h)
-          || /^(fc00:|fe80:)/i.test(h)
-          || h === 'metadata.google.internal') {
-          return erro(res, 400, 'URL aponta para endereço interno não permitido');
+        if (!(await validarUrlExterna(url.trim()))) {
+          return erro(res, 400, 'URL inválida ou aponta para endereço interno não permitido');
         }
       }
 
