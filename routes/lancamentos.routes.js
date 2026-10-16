@@ -1,6 +1,6 @@
 ﻿'use strict';
 const express = require('express');
-const { normalizarDecimal, normalizarDataISO, hoje } = require('../utils/normalizadores');
+const { normalizarDecimal, normalizarDataISO, normalizarInt, hoje } = require('../utils/normalizadores');
 const { obterPeriodo, adicionarFiltroPeriodo, adicionarFiltroPeriodoRange } = require('../utils/periodoUtils');
 const { requirePermissao } = require('../utils/permissoes');
 const { jsonErro, erroFromException } = require('../utils/routeHelpers');

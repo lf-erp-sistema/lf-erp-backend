@@ -41,12 +41,12 @@ module.exports = function comprasEditarRoutes({
 
       const contasPagas = await client.query(
         `SELECT COUNT(*) AS total FROM contas_pagar
-         WHERE compra_id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3)) AND LOWER(status) = 'pago'`,
+         WHERE compra_id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3)) AND LOWER(status) IN ('pago', 'parcial', 'parcial_atrasado')`,
         [id, empresaResolvida.id, empresaResolvida.nome]
       );
       if (Number(contasPagas.rows[0].total) > 0) {
         await client.query('ROLLBACK');
-        return erro(res, 400, 'Não é possível editar uma compra com contas a pagar já pagas');
+        return erro(res, 400, 'Não é possível editar uma compra com contas a pagar já pagas ou parcialmente pagas');
       }
 
       // Reverter estoque dos itens originais
@@ -102,7 +102,7 @@ module.exports = function comprasEditarRoutes({
         [id, empresaResolvida.id, empresaResolvida.nome]
       );
       await client.query(
-        `DELETE FROM contas_pagar WHERE compra_id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3)) AND LOWER(status) != 'pago'`,
+        `DELETE FROM contas_pagar WHERE compra_id = $1 AND (empresa_id = $2 OR (empresa_id IS NULL AND empresa = $3)) AND LOWER(status) NOT IN ('pago', 'parcial', 'parcial_atrasado')`,
         [id, empresaResolvida.id, empresaResolvida.nome]
       );
 

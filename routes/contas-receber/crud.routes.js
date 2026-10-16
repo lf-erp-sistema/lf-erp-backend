@@ -148,6 +148,18 @@ module.exports = function contasReceberCrudRoutes({
       const empresaResolvida = await validarAcessoEmpresa(req, conta.empresa, conta.empresa_id);
       if (!empresaResolvida) return jsonErro(res, 403, 'Sem acesso');
 
+      // Conta paga ou com baixa parcial já registrada: valor/vencimento não podem
+      // ser reescritos depois do fato (alteraria retroativamente o que já foi
+      // recebido, sem deixar rastro de que o valor mudou após o pagamento). O
+      // caminho em lote (escopo "esta_e_proximas"/"todas") já tinha essa guarda
+      // no próprio WHERE do UPDATE; faltava no caminho "apenas_esta" (achado
+      // B2-DATA-002, Auditoria de Segurança 2026-10-16). Observação continua
+      // editável mesmo para contas já pagas.
+      const statusProtegido = ['pago', 'parcial', 'parcial_atrasado'].includes(String(conta.status || '').toLowerCase());
+      if (statusProtegido && (valor !== undefined || data_vencimento !== undefined)) {
+        return jsonErro(res, 400, 'Conta paga ou parcialmente paga: apenas a observação pode ser editada.');
+      }
+
       const sets = [];
       const params = [];
       const camposAlterados = [];
@@ -178,9 +190,11 @@ module.exports = function contasReceberCrudRoutes({
       const usarBulk = escopoValido !== 'apenas_esta' && conta.venda_id;
 
       if (!usarBulk) {
-        params.push(id);
+        params.push(id, empresaResolvida.id, empresaResolvida.nome);
         await pool.query(
-          `UPDATE contas_receber SET ${sets.join(', ')} WHERE id = $${params.length}`,
+          `UPDATE contas_receber SET ${sets.join(', ')}
+           WHERE id = $${params.length - 2}
+             AND (empresa_id = $${params.length - 1} OR (empresa_id IS NULL AND empresa = $${params.length}))`,
           params
         );
       } else {
