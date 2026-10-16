@@ -61,10 +61,10 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normaliz
         calcularSaldo(sessao.id)
       ]);
 
-      // Vendas em dinheiro/pix no período para exibição (não modifica saldo).
-      // Usa criado_em (timestamp real do INSERT), mesma coluna que POST /fechar
-      // usa para apurar saldo_calculado — "data" é editável/retroativa e podia
-      // divergir do valor que o fechamento realmente usa (achado B-DATA-006).
+      // Vendas em dinheiro/pix no período. Usa criado_em (timestamp real do
+      // INSERT), mesma coluna que POST /fechar usa para apurar o saldo final
+      // — "data" é editável/retroativa e podia divergir do valor que o
+      // fechamento realmente usa (achado B-DATA-006).
       const vendasResult = await pool.query(
         `SELECT COALESCE(SUM(total), 0) AS total_vendas, COUNT(*) AS qtd_vendas
          FROM vendas
@@ -74,13 +74,19 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normaliz
         [emp.id, sessao.aberto_em, emp.nome]
       );
       const vendas = vendasResult.rows[0];
+      const totalVendas = Number(vendas.total_vendas || 0);
 
       return ok(res, {
         sessao: { ...sessao, saldo_abertura: Number(sessao.saldo_abertura) },
         movimentos,
-        saldo_calculado: +saldo_calculado.toFixed(2),
+        // Inclui vendas em dinheiro/pix, igual ao que POST /fechar apura
+        // (saldoMovimentos + totalVendas) — antes "Saldo em caixa" exibia só
+        // os movimentos de caixa, sem as vendas do dia, mostrando ao operador
+        // um valor menor do que o fechamento realmente apuraria (achado
+        // B2-DATA-006, Auditoria de Segurança 2026-10-16).
+        saldo_calculado: +(saldo_calculado + totalVendas).toFixed(2),
         vendas_dinheiro_pix: {
-          total:    Number(vendas.total_vendas || 0),
+          total:    totalVendas,
           quantidade: Number(vendas.qtd_vendas || 0)
         }
       });
