@@ -305,7 +305,7 @@ module.exports = function assistenciaOsRoutes({
            causa_provavel=$15, procedimento_recomendado=$16, tecnico=$17,
            valor_mao_obra=$18, data_prevista=$19, data_conclusao=$20,
            observacoes=$21, aparelho_id=$22, atualizado_em=NOW()
-         WHERE id=$23`,
+         WHERE id=$23 AND (empresa_id=$24 OR (empresa_id IS NULL AND empresa=$25))`,
         [
           normalizarInt(cliente_id) || null, equipamento_tipo || null, equipamento_marca || null,
           equipamento_modelo || null, equipamento_serie || null,
@@ -317,6 +317,7 @@ module.exports = function assistenciaOsRoutes({
           normalizarDataISO(data_prevista) || null,
           normalizarDataISO(data_conclusao) || null,
           observacoes || null, normalizarInt(aparelho_id) || null, id,
+          er.id, er.nome,
         ]
       );
 
@@ -472,8 +473,8 @@ module.exports = function assistenciaOsRoutes({
       await client.query(
         `UPDATE ordens_servico SET status='entregue', data_conclusao=NOW(),
            entregue_por=$1, entregue_pagamento=$2, entregue_observacoes=$3, atualizado_em=NOW()
-         WHERE id=$4`,
-        [req.user?.nome || req.user?.usuario || null, pagamento || null, observacoes || null, id]
+         WHERE id=$4 AND (empresa_id=$5 OR (empresa_id IS NULL AND empresa=$6))`,
+        [req.user?.nome || req.user?.usuario || null, pagamento || null, observacoes || null, id, er.id, er.nome]
       );
 
       let contaReceberID = null;
@@ -494,7 +495,10 @@ module.exports = function assistenciaOsRoutes({
       }
 
       if (contaReceberID) {
-        await client.query(`UPDATE ordens_servico SET conta_receber_id=$1 WHERE id=$2`, [contaReceberID, id]);
+        await client.query(
+          `UPDATE ordens_servico SET conta_receber_id=$1 WHERE id=$2 AND (empresa_id=$3 OR (empresa_id IS NULL AND empresa=$4))`,
+          [contaReceberID, id, er.id, er.nome]
+        );
       }
 
       await registrarEvento(client, {

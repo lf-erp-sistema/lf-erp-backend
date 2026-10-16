@@ -239,14 +239,14 @@ module.exports = ({
            equipamento_serie = $5, problema_relatado = $6, diagnostico = $7, servicos_realizados = $8,
            tecnico = $9, valor_mao_obra = $10, data_prevista = $11, data_conclusao = $12,
            observacoes = $13, atualizado_em = NOW()
-         WHERE id = $14`,
+         WHERE id = $14 AND (empresa_id = $15 OR (empresa_id IS NULL AND empresa = $16))`,
         [normalizarInt(cliente_id) || null,
          equipamento_tipo || null, equipamento_marca || null, equipamento_modelo || null, equipamento_serie || null,
          problema_relatado || null, diagnostico || null, servicos_realizados || null, tecnico || null,
          normalizarDecimal(valor_mao_obra) || 0,
          normalizarDataISO(data_prevista) || null,
          normalizarDataISO(data_conclusao) || null,
-         observacoes || null, id]
+         observacoes || null, id, empresaResolvida.id, empresaResolvida.nome]
       );
 
       await client.query(`DELETE FROM ordens_servico_itens WHERE os_id = $1`, [id]);

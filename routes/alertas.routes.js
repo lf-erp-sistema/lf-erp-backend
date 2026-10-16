@@ -423,8 +423,8 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
       if (!clienteId && !clienteNome) return erro(res, 400, 'Informe cliente_id ou cliente_nome');
 
       const whereCliente = clienteId
-        ? `AND cr.cliente_id = ${clienteId}`
-        : `AND LOWER(cr.cliente_nome) = LOWER('${clienteNome.replace(/'/g, "''")}')`;
+        ? `AND cr.cliente_id = $3`
+        : `AND LOWER(cr.cliente_nome) = LOWER($3)`;
 
       const result = await pool.query(
         `SELECT cr.id, cr.cliente_id, cr.cliente_nome, cr.observacao,
@@ -438,7 +438,7 @@ module.exports = ({ auth, writeRateLimiter, pool, validarAcessoEmpresa }) => {
            AND LOWER(COALESCE(cr.status,'pendente')) NOT IN ('pago','cancelado','estornado')
            ${whereCliente}
          ORDER BY cr.data_vencimento`,
-        [emp.id, emp.nome]
+        [emp.id, emp.nome, clienteId || clienteNome]
       );
 
       if (result.rowCount === 0) return erro(res, 404, 'Nenhuma promissória em aberto para este cliente');
