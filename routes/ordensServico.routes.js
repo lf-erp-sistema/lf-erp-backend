@@ -125,6 +125,20 @@ module.exports = ({
         if (clienteCheck.rowCount === 0) { await client.query('ROLLBACK'); return erro(res, 404, 'Cliente não encontrado'); }
       }
 
+      // produto_id de outra empresa não era validado antes do INSERT (achado
+      // D2-SEC-001) — mesmo padrão já usado pra cliente_id acima.
+      const produtoIdsReq = [...new Set(itens.map(i => normalizarInt(i.produto_id)).filter(Boolean))];
+      if (produtoIdsReq.length) {
+        const prodCheck = await client.query(
+          `SELECT id FROM produtos WHERE id = ANY($1) AND empresa_id = $2`, [produtoIdsReq, empresaResolvida.id]
+        );
+        const prodIdsValidos = new Set(prodCheck.rows.map(r => r.id));
+        for (const item of itens) {
+          const pid = normalizarInt(item.produto_id);
+          if (pid && !prodIdsValidos.has(pid)) { await client.query('ROLLBACK'); return erro(res, 404, `Produto ${pid} não encontrado`); }
+        }
+      }
+
       const numero      = await gerarNumeroOS(empresaResolvida.id, empresaResolvida.nome);
       const maoObra     = normalizarDecimal(valor_mao_obra) || 0;
       const dtPrevista  = normalizarDataISO(data_prevista)  || null;
@@ -192,9 +206,9 @@ module.exports = ({
 
       const itensRes = await pool.query(
         `SELECT osi.*, p.nome AS produto_nome FROM ordens_servico_itens osi
-         LEFT JOIN produtos p ON p.id = osi.produto_id
+         LEFT JOIN produtos p ON p.id = osi.produto_id AND p.empresa_id = $2
          WHERE osi.os_id = $1 ORDER BY osi.id`,
-        [id]
+        [id, empresaResolvida.id]
       );
 
       return ok(res, { ordem: osRes.rows[0], itens: itensRes.rows });
@@ -231,6 +245,20 @@ module.exports = ({
           [normalizarInt(cliente_id), empresaResolvida.id]
         );
         if (clienteCheck.rowCount === 0) { await client.query('ROLLBACK'); return erro(res, 404, 'Cliente não encontrado'); }
+      }
+
+      // produto_id de outra empresa não era validado antes do INSERT (achado
+      // D2-SEC-001) — mesmo padrão já usado pra cliente_id acima.
+      const produtoIdsReq = [...new Set(itens.map(i => normalizarInt(i.produto_id)).filter(Boolean))];
+      if (produtoIdsReq.length) {
+        const prodCheck = await client.query(
+          `SELECT id FROM produtos WHERE id = ANY($1) AND empresa_id = $2`, [produtoIdsReq, empresaResolvida.id]
+        );
+        const prodIdsValidos = new Set(prodCheck.rows.map(r => r.id));
+        for (const item of itens) {
+          const pid = normalizarInt(item.produto_id);
+          if (pid && !prodIdsValidos.has(pid)) { await client.query('ROLLBACK'); return erro(res, 404, `Produto ${pid} não encontrado`); }
+        }
       }
 
       await client.query(

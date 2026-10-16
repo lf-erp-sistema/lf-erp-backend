@@ -125,6 +125,26 @@ module.exports = ({
         if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
       }
 
+      // produto_id/grade_id de outra empresa não eram validados antes do INSERT
+      // (achado D2-SEC-001) — mesmo padrão já usado pra cliente_id acima e pra
+      // itens em api-publica.routes.js.
+      const produtoIdsReq = [...new Set(itens.map(i => Number(i.produto_id)).filter(id => id > 0))];
+      const gradeIdsReq   = [...new Set(itens.map(i => i.grade_id ? Number(i.grade_id) : null).filter(Boolean))];
+      const [prodCheck, gradeCheck] = await Promise.all([
+        produtoIdsReq.length
+          ? pool.query(`SELECT id FROM produtos WHERE id = ANY($1) AND empresa_id = $2`, [produtoIdsReq, empresaResolvida.id])
+          : { rows: [] },
+        gradeIdsReq.length
+          ? pool.query(`SELECT id FROM produto_grades WHERE id = ANY($1) AND empresa_id = $2`, [gradeIdsReq, empresaResolvida.id])
+          : { rows: [] }
+      ]);
+      const prodIdsValidos  = new Set(prodCheck.rows.map(r => r.id));
+      const gradeIdsValidos = new Set(gradeCheck.rows.map(r => r.id));
+      for (const item of itens) {
+        if (!prodIdsValidos.has(Number(item.produto_id))) return erro(res, 404, `Produto ${item.produto_id} não encontrado`);
+        if (item.grade_id && !gradeIdsValidos.has(Number(item.grade_id))) return erro(res, 404, `Grade ${item.grade_id} não encontrada`);
+      }
+
       // Resolve preços com tabela do cliente
       const itensResolvidos = await Promise.all(itens.map(async (item) => {
         const produtoId = Number(item.produto_id);
@@ -213,10 +233,10 @@ module.exports = ({
           `SELECT oi.*, p.unidade,
                   pg.atributo1, pg.atributo2
            FROM orcamento_itens oi
-           LEFT JOIN produtos p ON p.id = oi.produto_id
-           LEFT JOIN produto_grades pg ON pg.id = oi.grade_id
+           LEFT JOIN produtos p ON p.id = oi.produto_id AND p.empresa_id = $2
+           LEFT JOIN produto_grades pg ON pg.id = oi.grade_id AND pg.empresa_id = $2
            WHERE oi.orcamento_id = $1`,
-          [id]
+          [id, empresaResolvida.id]
         )
       ]);
 
@@ -264,6 +284,31 @@ module.exports = ({
         let totalFinal    = Number(atual.rows[0].total);
 
         if (Array.isArray(itens) && itens.length > 0) {
+          // produto_id/grade_id de outra empresa não eram validados antes do
+          // INSERT (achado D2-SEC-001) — mesma checagem aplicada no POST.
+          const produtoIdsReq = [...new Set(itens.map(i => Number(i.produto_id)).filter(id => id > 0))];
+          const gradeIdsReq   = [...new Set(itens.map(i => i.grade_id ? Number(i.grade_id) : null).filter(Boolean))];
+          const [prodCheck, gradeCheck] = await Promise.all([
+            produtoIdsReq.length
+              ? client.query(`SELECT id FROM produtos WHERE id = ANY($1) AND empresa_id = $2`, [produtoIdsReq, empresaResolvida.id])
+              : { rows: [] },
+            gradeIdsReq.length
+              ? client.query(`SELECT id FROM produto_grades WHERE id = ANY($1) AND empresa_id = $2`, [gradeIdsReq, empresaResolvida.id])
+              : { rows: [] }
+          ]);
+          const prodIdsValidos  = new Set(prodCheck.rows.map(r => r.id));
+          const gradeIdsValidos = new Set(gradeCheck.rows.map(r => r.id));
+          for (const item of itens) {
+            if (!prodIdsValidos.has(Number(item.produto_id))) {
+              await client.query('ROLLBACK');
+              return erro(res, 404, `Produto ${item.produto_id} não encontrado`);
+            }
+            if (item.grade_id && !gradeIdsValidos.has(Number(item.grade_id))) {
+              await client.query('ROLLBACK');
+              return erro(res, 404, `Grade ${item.grade_id} não encontrada`);
+            }
+          }
+
           await client.query(`DELETE FROM orcamento_itens WHERE orcamento_id = $1`, [id]);
           const clienteId = cliente_id ? Number(cliente_id) : atual.rows[0].cliente_id;
 

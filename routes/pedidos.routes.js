@@ -117,6 +117,26 @@ module.exports = ({
         if (clienteCheck.rowCount === 0) return erro(res, 404, 'Cliente não encontrado');
       }
 
+      // produto_id/grade_id de outra empresa não eram validados antes do
+      // INSERT (achado D2-SEC-001) — mesmo padrão já usado pra cliente_id acima
+      // e pra itens em api-publica.routes.js/orcamentos.routes.js.
+      const produtoIdsReq = [...new Set(itens.map(i => Number(i.produto_id)).filter(id => id > 0))];
+      const gradeIdsReq   = [...new Set(itens.map(i => i.grade_id ? Number(i.grade_id) : null).filter(Boolean))];
+      const [prodCheck, gradeCheck] = await Promise.all([
+        produtoIdsReq.length
+          ? pool.query(`SELECT id FROM produtos WHERE id = ANY($1) AND empresa_id = $2`, [produtoIdsReq, empresaResolvida.id])
+          : { rows: [] },
+        gradeIdsReq.length
+          ? pool.query(`SELECT id FROM produto_grades WHERE id = ANY($1) AND empresa_id = $2`, [gradeIdsReq, empresaResolvida.id])
+          : { rows: [] }
+      ]);
+      const prodIdsValidos  = new Set(prodCheck.rows.map(r => r.id));
+      const gradeIdsValidos = new Set(gradeCheck.rows.map(r => r.id));
+      for (const item of itens) {
+        if (!prodIdsValidos.has(Number(item.produto_id))) return erro(res, 404, `Produto ${item.produto_id} não encontrado`);
+        if (item.grade_id && !gradeIdsValidos.has(Number(item.grade_id))) return erro(res, 404, `Grade ${item.grade_id} não encontrada`);
+      }
+
       const itensResolvidos = await Promise.all(itens.map(async (item) => {
         const produtoId = Number(item.produto_id);
         const gradeId   = item.grade_id ? Number(item.grade_id) : null;
@@ -197,10 +217,10 @@ module.exports = ({
           `SELECT pi.*, p.estoque AS estoque_atual, p.unidade,
                   pg.atributo1, pg.atributo2
            FROM pedido_itens pi
-           LEFT JOIN produtos p ON p.id = pi.produto_id
-           LEFT JOIN produto_grades pg ON pg.id = pi.grade_id
+           LEFT JOIN produtos p ON p.id = pi.produto_id AND p.empresa_id = $2
+           LEFT JOIN produto_grades pg ON pg.id = pi.grade_id AND pg.empresa_id = $2
            WHERE pi.pedido_id = $1`,
-          [id]
+          [id, empresaResolvida.id]
         )
       ]);
 
