@@ -23,8 +23,7 @@ module.exports = function relatoriosFluxoCaixaRoutes({
         return erro(res, 403, 'Sem acesso');
       }
 
-      try { await atualizarStatusContasReceberPorEmpresa(empresaResolvida.nome, empresaResolvida.id); } catch (e) { console.error('[relatorios] status-cr:', e.message); }
-      try { await atualizarStatusContasPagarPorEmpresa(empresaResolvida.nome, empresaResolvida.id); } catch (e) { console.error('[relatorios] status-cp:', e.message); }
+      // Somente pagamentos efetivos entram no fluxo; atrasos não afetam esta consulta.
 
       const { dataInicial, dataFinal } = obterPeriodo(req);
 

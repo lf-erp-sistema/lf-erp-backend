@@ -24,8 +24,7 @@ module.exports = function relatoriosResumoRoutes({
         return erro(res, 403, 'Sem acesso');
       }
 
-      try { await atualizarStatusContasReceberPorEmpresa(empresaResolvida.nome, empresaResolvida.id); } catch (e) { console.error('[relatorios] status-cr:', e.message); }
-      try { await atualizarStatusContasPagarPorEmpresa(empresaResolvida.nome, empresaResolvida.id); } catch (e) { console.error('[relatorios] status-cp:', e.message); }
+      // O resumo calcula atrasos por vencimento, sem precisar atualizar os títulos.
 
       const { dataInicial, dataFinal } = obterPeriodo(req);
 

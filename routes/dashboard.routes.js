@@ -20,10 +20,7 @@ router.get('/dashboard', auth, requirePermissao(pool, 'dashboard', 'ver'), async
       return jsonErro(res, 403, 'Sem acesso');
     }
 
-    await Promise.all([
-      atualizarStatusContasReceberPorEmpresa(empresaResolvida.nome, empresaResolvida.id).catch(e => console.error('[dashboard] status-cr:', e.message)),
-      atualizarStatusContasPagarPorEmpresa(empresaResolvida.nome, empresaResolvida.id).catch(e => console.error('[dashboard] status-cp:', e.message))
-    ]);
+    // Os totais incluem todos os status em aberto; não dependem de persistir atrasos.
 
     const { dataInicial, dataFinal } = obterPeriodo(req);
 
