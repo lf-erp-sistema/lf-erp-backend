@@ -127,6 +127,20 @@ module.exports = ({
       );
       const itensVendaMap = new Map(itensVendaRes.rows.map((i) => [`${Number(i.produto_id)}-${i.grade_id || ''}`, i]));
 
+      // Pré-busca a quantidade já devolvida de cada item da venda em UMA query
+      // agregada (evita N+1 — antes era uma query por item dentro do loop abaixo).
+      const jaDevolvidoRes = await client.query(
+        `SELECT di.produto_id, di.grade_id, COALESCE(SUM(di.quantidade), 0) AS ja_devolvido
+         FROM devolucao_itens di
+         JOIN devolucoes d ON d.id = di.devolucao_id
+         WHERE d.venda_id = $1 AND (di.empresa_id = $2 OR (di.empresa_id IS NULL AND di.empresa = $3))
+         GROUP BY di.produto_id, di.grade_id`,
+        [Number(venda_id), emp.id, emp.nome]
+      );
+      const jaDevolvidoMap = new Map(
+        jaDevolvidoRes.rows.map((r) => [`${Number(r.produto_id)}-${r.grade_id || ''}`, Number(r.ja_devolvido || 0)])
+      );
+
       // Valida e prepara itens a devolver
       let totalDevolvido = 0;
       const itensValidados = [];
@@ -143,17 +157,8 @@ module.exports = ({
         if (!original) { await client.query('ROLLBACK'); return erro(res, 400, `Produto ${produtoId} não encontrado na venda`); }
         if (qtd > Number(original.quantidade)) { await client.query('ROLLBACK'); return erro(res, 400, `Quantidade a devolver (${qtd}) maior que a vendida (${original.quantidade}) para ${original.produto_nome}`); }
 
-        // Verifica quantidade já devolvida anteriormente para este item
-        const jaDevRes = await client.query(
-          `SELECT COALESCE(SUM(di.quantidade), 0) AS ja_devolvido
-           FROM devolucao_itens di
-           JOIN devolucoes d ON d.id = di.devolucao_id
-           WHERE d.venda_id = $1 AND di.produto_id = $2
-             AND (di.empresa_id = $3 OR (di.empresa_id IS NULL AND di.empresa = $4))
-             ${gradeId ? 'AND di.grade_id = $5' : 'AND di.grade_id IS NULL'}`,
-          gradeId ? [Number(venda_id), produtoId, emp.id, emp.nome, gradeId] : [Number(venda_id), produtoId, emp.id, emp.nome]
-        );
-        const jaDevolvido = Number(jaDevRes.rows[0].ja_devolvido || 0);
+        // Quantidade já devolvida anteriormente para este item (pré-buscada acima)
+        const jaDevolvido = jaDevolvidoMap.get(`${produtoId}-${gradeId || ''}`) || 0;
         const disponivelParaDevolucao = Number(original.quantidade) - jaDevolvido;
         if (qtd > disponivelParaDevolucao) {
           await client.query('ROLLBACK');
