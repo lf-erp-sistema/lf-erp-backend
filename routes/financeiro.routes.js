@@ -170,7 +170,8 @@ module.exports = function ({
 
       const FLUXO_LIMIT = 1000;
 
-      const [movReceber, movPagar, movLanc, movInvest, movVendas, movCompras] = await Promise.all([
+      const [movReceber, movPagar, movLanc, movInvest, movVendas, movCompras,
+             totReceber, totPagar, totLanc, totInvest, totVendas, totCompras] = await Promise.all([
         pool.query(
           `SELECT id,'conta_receber' origem,'entrada' tipo,
           COALESCE(cliente_nome,'Cliente') descricao,
@@ -232,6 +233,42 @@ module.exports = function ({
           ${whereCompras}
           ORDER BY c.data DESC LIMIT $${paramsCompras.length + 1}`,
           [...paramsCompras, FLUXO_LIMIT]
+        ),
+
+        // Totais reais por forma de pagamento, sem o LIMIT acima — a lista de
+        // `movimentos` é só para exibição e pode ser truncada em volume alto,
+        // mas entradas/saidas/resumo_formas_pagamento precisam refletir o
+        // período inteiro, não só as primeiras 1000 linhas de cada origem
+        // (achado B-PERF-003: sem isso, os totais ficavam incompletos quando
+        // qualquer origem batia no limite).
+        pool.query(
+          `SELECT forma_pagamento, COALESCE(SUM(valor),0) AS total
+           FROM contas_receber ${whereReceber} GROUP BY forma_pagamento`,
+          paramsReceber
+        ),
+        pool.query(
+          `SELECT forma_pagamento, COALESCE(SUM(valor),0) AS total
+           FROM contas_pagar ${wherePagar} GROUP BY forma_pagamento`,
+          paramsPagar
+        ),
+        pool.query(
+          `SELECT tipo, COALESCE(SUM(valor),0) AS total
+           FROM lancamentos_financeiros ${whereLanc} GROUP BY tipo`,
+          paramsLanc
+        ),
+        pool.query(
+          `SELECT COALESCE(SUM(valor),0) AS total FROM investimentos ${whereInvest}`,
+          paramsInvest
+        ),
+        pool.query(
+          `SELECT v.pagamento AS forma_pagamento, COALESCE(SUM(v.total),0) AS total
+           FROM vendas v ${whereVendas} GROUP BY v.pagamento`,
+          paramsVendas
+        ),
+        pool.query(
+          `SELECT c.pagamento AS forma_pagamento, COALESCE(SUM(c.total),0) AS total
+           FROM compras c ${whereCompras} GROUP BY c.pagamento`,
+          paramsCompras
         )
       ]);
 
@@ -251,22 +288,26 @@ module.exports = function ({
         forma_pagamento: normalizarFormaPagamentoFluxo(m.forma_pagamento)
       }));
 
-      const entradas = movimentos
-        .filter((m) => m.tipo === 'entrada')
-        .reduce((acc, m) => acc + m.valor, 0);
+      // Resumo por forma de pagamento e totais entradas/saidas — agregados via
+      // SQL (sem o LIMIT da lista de exibição), então sempre refletem o
+      // período inteiro, mesmo truncado=true.
+      const resumoFormasPagamento = {};
+      const acumular = (forma, valor, tipo) => {
+        const k = normalizarFormaPagamentoFluxo(forma);
+        if (!resumoFormasPagamento[k]) resumoFormasPagamento[k] = { entradas: 0, saidas: 0 };
+        const campo = tipo === 'entrada' ? 'entradas' : 'saidas';
+        resumoFormasPagamento[k][campo] = Number((resumoFormasPagamento[k][campo] + Number(valor || 0)).toFixed(2));
+      };
 
-      const saidas = movimentos
-        .filter((m) => m.tipo === 'saida')
-        .reduce((acc, m) => acc + m.valor, 0);
+      totReceber.rows.forEach((r) => acumular(r.forma_pagamento, r.total, 'entrada'));
+      totPagar.rows.forEach((r) => acumular(r.forma_pagamento, r.total, 'saida'));
+      totLanc.rows.forEach((r) => acumular(null, r.total, r.tipo === 'receita' ? 'entrada' : 'saida'));
+      if (Number(totInvest.rows[0]?.total || 0) !== 0) acumular(null, totInvest.rows[0].total, 'saida');
+      totVendas.rows.forEach((r) => acumular(r.forma_pagamento, r.total, 'entrada'));
+      totCompras.rows.forEach((r) => acumular(r.forma_pagamento, r.total, 'saida'));
 
-      // F-A2: construir resumo por forma de pagamento via agregação em JS
-      const resumoFormasPagamento = movimentos.reduce((acc, m) => {
-        const k = m.forma_pagamento || 'nao_informado';
-        if (!acc[k]) acc[k] = { entradas: 0, saidas: 0 };
-        if (m.tipo === 'entrada') acc[k].entradas = Number((acc[k].entradas + m.valor).toFixed(2));
-        else acc[k].saidas = Number((acc[k].saidas + m.valor).toFixed(2));
-        return acc;
-      }, {});
+      const entradas = Object.values(resumoFormasPagamento).reduce((acc, f) => acc + f.entradas, 0);
+      const saidas   = Object.values(resumoFormasPagamento).reduce((acc, f) => acc + f.saidas, 0);
 
       return res.json({
         sucesso: true,
