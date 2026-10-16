@@ -118,11 +118,16 @@ app.use((req, res, next) => {
   // Backend é só API JSON — nenhuma resposta deveria ser renderizada como
   // página interativa (achado A2-SEC-005, Auditoria de Segurança 2026-10-16).
   res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  // Redirect HTTP→HTTPS não depende de NODE_ENV estar corretamente configurado
+  // no Render — barato e seguro de aplicar sempre; localmente (sem proxy) o
+  // header x-forwarded-proto nunca chega, então nunca dispara (achado
+  // A2-SEC-006, Auditoria de Segurança 2026-10-16). HSTS continua condicional:
+  // forçá-lo fora de produção arriscaria um cache de navegador em dev/local.
+  if (req.header('x-forwarded-proto') === 'http') {
+    return res.redirect(301, `https://${req.header('host')}${req.url}`);
+  }
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    if (req.header('x-forwarded-proto') === 'http') {
-      return res.redirect(301, `https://${req.header('host')}${req.url}`);
-    }
   }
   next();
 });
