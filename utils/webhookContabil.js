@@ -6,6 +6,7 @@
 
 const crypto = require('crypto');
 const { validarUrlExterna: validarUrlWebhook, fetchSeguro } = require('./ssrfGuard');
+const { decryptField } = require('./pixCrypto');
 
 function timestampFortaleza() {
   // Gera ISO 8601 com offset -03:00 (America/Fortaleza, sem horário de verão)
@@ -25,7 +26,8 @@ async function dispararWebhook(pool, empresaId, evento, dados) {
   );
   if (!r.rowCount) return;
 
-  const { webhook_url, webhook_secret, eventos_ativos } = r.rows[0];
+  const { webhook_url, eventos_ativos } = r.rows[0];
+  const webhook_secret = r.rows[0].webhook_secret ? decryptField(r.rows[0].webhook_secret) : null;
   if (Array.isArray(eventos_ativos) && !eventos_ativos.includes(evento)) return;
 
   if (!(await validarUrlWebhook(webhook_url))) {

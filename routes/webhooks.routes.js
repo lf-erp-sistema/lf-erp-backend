@@ -23,6 +23,7 @@ const { requirePermissao } = require('../utils/permissoes');
 const { dispatchWebhook, enviarWebhook } = require('../utils/webhooks');
 const { validarUrlExterna } = require('../utils/ssrfGuard');
 const { erro, ok } = require('../utils/routeHelpers');
+const { encryptField } = require('../utils/pixCrypto');
 
 const EVENTOS_DISPONIVEIS = [
   'venda.criada',
@@ -154,7 +155,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa 
       const result = await pool.query(
         `INSERT INTO webhook_endpoints (empresa_id, nome, url, eventos, secret)
          VALUES ($1,$2,$3,$4,$5) RETURNING id, nome, url, eventos, ativo`,
-        [emp.id, nome.trim(), url.trim(), eventosValidos, secret?.trim() || null]
+        [emp.id, nome.trim(), url.trim(), eventosValidos, secret?.trim() ? encryptField(secret.trim()) : null]
       );
 
       return res.status(201).json({ sucesso: true, endpoint: result.rows[0] });
@@ -193,7 +194,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa 
           nome?.trim() || null,
           url?.trim()  || null,
           eventosValidos,
-          secret?.trim() || null,
+          secret?.trim() ? encryptField(secret.trim()) : null,
           ativo != null ? Boolean(ativo) : null,
           Number(req.params.id), emp.id
         ]

@@ -5,6 +5,7 @@
 
 const crypto = require('crypto');
 const { validarUrlExterna, fetchSeguro } = require('./ssrfGuard');
+const { decryptField } = require('./pixCrypto');
 
 const MAX_TENTATIVAS = 3;
 const TIMEOUT_MS     = 10000;
@@ -40,6 +41,7 @@ async function enviarWebhook({ pool, endpoint, evento, payload, tentativa }) {
     console.warn(`[webhooks] endpoint ${endpoint.id} sem secret — descartado`);
     return;
   }
+  const secret = decryptField(endpoint.secret);
 
   if (!(await validarUrlExterna(endpoint.url))) {
     console.warn(`[webhooks] endpoint ${endpoint.id}: URL bloqueada por SSRF (${endpoint.url})`);
@@ -61,7 +63,7 @@ async function enviarWebhook({ pool, endpoint, evento, payload, tentativa }) {
   });
 
   const sig = crypto
-    .createHmac('sha256', endpoint.secret)
+    .createHmac('sha256', secret)
     .update(body)
     .digest('hex');
 

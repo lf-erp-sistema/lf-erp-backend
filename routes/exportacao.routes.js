@@ -16,6 +16,7 @@
 
 const { obterPeriodo, adicionarFiltroPeriodo } = require('../utils/periodoUtils');
 const { validarUrlExterna, fetchSeguro } = require('../utils/ssrfGuard');
+const { encryptField, decryptField } = require('../utils/pixCrypto');
 
 module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa, normalizarDecimal, hoje }) {
   const router = require('express').Router();
@@ -585,7 +586,7 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
           emp.id,
           email_contador || null,
           webhook_url    || null,
-          webhook_secret || null,
+          webhook_secret === '***' ? '***' : (webhook_secret ? encryptField(webhook_secret) : null),
           eventosFiltrados,
           ativo !== false
         ]
@@ -614,7 +615,8 @@ module.exports = function ({ auth, writeRateLimiter, pool, validarAcessoEmpresa,
         return res.status(400).json({ sucesso: false, erro: 'Nenhuma URL de webhook configurada.' });
       }
 
-      const { webhook_url, webhook_secret } = r.rows[0];
+      const webhook_url = r.rows[0].webhook_url;
+      const webhook_secret = r.rows[0].webhook_secret ? decryptField(r.rows[0].webhook_secret) : null;
       const payload = JSON.stringify({
         evento: 'teste',
         timestamp: new Date().toLocaleString('sv-SE', { timeZone: 'America/Fortaleza' }).replace(' ', 'T'),
